@@ -117,8 +117,8 @@ def VanDerPol_jacobian(t, x, params):
     x1, x2 = x
 
     # Jacobian matrix
-    J = np.array([[ -2 * mu * x1 * x2 - 1, mu * (1 - x1**2)],
-                  [ 1, mu * (1 - x1**2)]])
+    J = np.array([[ 0, 1],
+                  [ -2*x1*x2 - 1, mu * (1 - x1**2)]])
     
     return J
 
@@ -135,21 +135,6 @@ A = 0.1             # Cross-sectional area Reactor
 D = [0.1, 0.1, 0.1] # Diffusion coefficients
 # F is some value between 200 and 800
 beta = - deltaHr / (p * cp) 
-
-def k(T):
-    return k0 * np.exp(-Ea_R / T)
-
-def r(CA, CB, T):
-    return k(T) * CA * CB
-
-def RA(T, CA, CB):
-    return -r(CA, CB, T)
-
-def RB(T, CA, CB):
-    return -2*r(CA, CB, T)
-
-def RT(T, CA, CB):
-    return beta * r(CA, CB, T)
 
 
 
@@ -181,6 +166,22 @@ def CSTR(t, CA, CB, T, params):
     dT_dt : float
         Rate of change of temperature
     """
+    beta = - deltaHr / (p * cp) 
+
+    def k(T):
+        return k0 * np.exp(-Ea_R / T)
+
+    def r(CA, CB, T):
+        return k(T) * CA * CB
+
+    def RA(T, CA, CB):
+        return -r(CA, CB, T)
+
+    def RB(T, CA, CB):
+        return -2*r(CA, CB, T)
+
+    def RT(T, CA, CB):
+        return beta * r(CA, CB, T)
     # Unpack parameters
     F, V, CAin, CBin, Tin = params
 
@@ -214,10 +215,10 @@ def CSTR_jacobian(t, x, params):
 
     # Unpack state variables
     CA, CB, T = x
-
+    beta = - deltaHr / (p * cp) 
     # Jacobian matrix
-    J = np.array([[ -F/V - k(t)*CB, - k(t) * CA, ],
-                  [ 0.0, -F/V - RB(T, CA, CB), 0.0],
-                  [ 0.0, 0.0, -F/V - RT(T, CA, CB)]])
+    J = np.array([[ -F/V - k0 * np.exp(-Ea_R / T)*CB, - k0 * np.exp(-Ea_R / T) * CA, - (Ea_R / T**2) *(k0 * np.exp(-Ea_R / T) * CA * CB)],
+                  [ - 2*k0 * np.exp(-Ea_R / T)*CB, - F/V - 2*k0 * np.exp(-Ea_R / T) * CA, - (Ea_R / T**2) *(2*k0 * np.exp(-Ea_R / T) * CA * CB)],
+                  [ beta * k0 * np.exp(-Ea_R / T) * CB, beta * k0 * np.exp(-Ea_R / T) * CA, -F/V - (Ea_R / T**2) *(beta * k0 * np.exp(-Ea_R / T) * CA * CB)]])
     
     return J
