@@ -20,6 +20,14 @@ def prey_predator_model(alpha, beta):
     
     return f, jacobian
 
+def PreyPredator_f(t, x, a, b):
+    xdot = np.zeros(2)
+    xdot[0] = a * (1 - x[1]) * x[0]
+    xdot[1] = -b * (1 - x[0]) * x[1]
+    
+    return xdot
+
+
 #Function for the Van der Pol model
 def van_der_pol_model(mu):
     def f(t, z):
