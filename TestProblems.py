@@ -222,3 +222,28 @@ def CSTR_jacobian(t, x, params):
                   [ beta * k0 * np.exp(-Ea_R / T) * CB, beta * k0 * np.exp(-Ea_R / T) * CA, -F/V - (Ea_R / T**2) *(beta * k0 * np.exp(-Ea_R / T) * CA * CB)]])
     
     return J
+
+# Function for the CSTR (1 state Model)
+
+def CSTR_1state(t, T, params):
+    def k(T):
+        return k0 * np.exp(-Ea_R / T)
+    # Unpack parameters
+    F, V, CA_in, CB_in, Tin = params
+    CA = CA_in + (1 / beta) * (Tin - T)
+    CB = CB_in + (2 / beta) * (Tin - T)
+    r = k(T) * CA * CB
+    return F / V * (Tin - T) + beta * r
+
+# Jacobian for the CSTR (1 state Model)
+def CSTR_1state_jacobian(t, T, params):
+    def k(T):
+        return k0 * np.exp(-Ea_R / T)
+    # Unpack parameters
+    F, V, CA_in, CB_in, Tin = params
+    CA = CA_in + (1 / beta) * (Tin - T)
+    CB = CB_in + (2 / beta) * (Tin - T)
+    # Jacobian matrix
+    J = np.array([-F/V + beta(k(T)*(Ea_R / T**2) * CA * CB + k(T) * CB * (-1/beta) + k(t) * CA * (-2/beta))])
+    
+    return J  
