@@ -253,7 +253,7 @@ def SDEsolverImplicitExplicit(ffun, gfun, T, x0, W, *varargin):
 ######## Runge-Kutta ##########
 ###############################
 
-# Classic Runge-Kutta with fixed step size
+# Runge-Kutta with fixed step size
 def ExplicitRungeKuttaSolver(f, tspan, x0, h, solver, *args):
     #Solver is a dict
 
@@ -312,7 +312,7 @@ def ExplicitRungeKuttaSolver(f, tspan, x0, h, solver, *args):
     return Tout, Xout
 
 
-# Classic Runge-Kutta with adaptive step size
+# Runge-Kutta with adaptive step size
 def ExplicitRungeKuttaSolverAdaptive(f, tspan, x0, h0, solver, abstol, reltol, *args):
     hmin = 0.1
     hmax = 5
@@ -410,10 +410,38 @@ def ExplicitRungeKuttaSolverAdaptive(f, tspan, x0, h0, solver, abstol, reltol, *
     return np.array(Tout), np.array(Xout), np.array(H)
 
 
+def rk4():
+    return {
+        "stages": 4,
+        "AT": np.array([[0,   0,   0, 0],
+                        [0.5, 0,   0, 0],
+                        [0,   0.5, 0, 0],
+                        [0,   0,   1, 0]]).T,
+        "b": np.array([1/6, 1/3, 1/3, 1/6]),
+        "c": np.array([0, 0.5, 0.5, 1])
+    }
+
+
+
 ###############################
 ##### Dormand-Prince 5(4) #####
 ###############################
 
+def dormand_prince_45():
+    return {
+        "stages": 7,
+        "AT": np.array([
+            [0, 0, 0, 0, 0, 0, 0],
+            [1/5, 0, 0, 0, 0, 0, 0],
+            [3/40, 9/40, 0, 0, 0, 0, 0],
+            [44/45, -56/15, 32/9, 0, 0, 0, 0],
+            [19372/6561, -25360/2187, 64448/6561, -212/729, 0, 0, 0],
+            [9017/3168, -355/33, 46732/5247, 49/176, -5103/18656, 0, 0],
+            [35/384, 0, 500/1113, 125/192, -2187/6784, 11/84, 0]
+        ]).T,
+        "b": np.array([35/384, 0, 500/1113, 125/192, -2187/6784, 11/84, 0]),
+        "c": np.array([0, 1/5, 3/10, 4/5, 8/9, 1, 1])
+    }
 
 ###############################
 ########## ESDIRK23 ###########
