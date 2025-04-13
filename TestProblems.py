@@ -72,6 +72,9 @@ def CSTR_3state_model(params):
     # F is some value between 200 and 800
     beta = - deltaHr / (p * cp) 
 
+    # Unpack parameters
+    F, V, CAin, CBin, Tin = params
+
     def k(T):
         return k0 * np.exp(-Ea_R / T)
 
@@ -86,10 +89,10 @@ def CSTR_3state_model(params):
 
     def RT(T, CA, CB):
         return beta * r(CA, CB, T)
-    # Unpack parameters
-    F, V, CAin, CBin, Tin = params
+    
 
-    def f(t, CA, CB, T, params):
+    def f(t, x):
+        CA, CB, T = x
 
         # Calculate derivatives
         dCA_dt = (F/V) * (CAin-CA) + RA(T, CA, CB)
@@ -98,7 +101,7 @@ def CSTR_3state_model(params):
 
         return np.array([dCA_dt, dCB_dt, dT_dt])
     
-    def jacobian(t, x, params):
+    def jacobian(t, x):
         CA, CB, T = x
         beta = - deltaHr / (p * cp) 
         # Jacobian matrix
@@ -111,24 +114,23 @@ def CSTR_3state_model(params):
 
 # Function for the CSTR (1 state Model)
 
-def CSTR_1state_model(t, T, params):
+def CSTR_1state_model(params):
+    F, V, CA_in, CB_in, Tin = params
 
-    def f(t, T, params):
+    def f(t, T):
         def k(T):
             return k0 * np.exp(-Ea_R / T)
         # Unpack parameters
-        F, V, CA_in, CB_in, Tin = params
         CA = CA_in + (1 / beta) * (Tin - T)
         CB = CB_in + (2 / beta) * (Tin - T)
         r = k(T) * CA * CB
         return F / V * (Tin - T) + beta * r
 
     # Jacobian for the CSTR (1 state Model)
-    def jacobian(t, T, params):
+    def jacobian(t, T):
         def k(T):
             return k0 * np.exp(-Ea_R / T)
         # Unpack parameters
-        F, V, CA_in, CB_in, Tin = params
         CA = CA_in + (1 / beta) * (Tin - T)
         CB = CB_in + (2 / beta) * (Tin - T)
         # Jacobian matrix
