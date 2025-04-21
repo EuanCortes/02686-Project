@@ -60,7 +60,7 @@ def ExplicitEulerAdaptiveStep(f, tspan, x0, h0, abstol, reltol, *args):
 
             # Compute the error
             err = np.abs(xnewm - xnew)
-            max1 = np.max([abstol, np.abs(xnewm) * reltol])
+            max1 = np.maximum(abstol, np.abs(xnewm) * reltol)
             r = np.max(err / max1)
             AcceptStep = (r <= 1)
 
