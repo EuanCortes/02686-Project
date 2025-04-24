@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.linalg import lu_factor, lu_solve
 
 ###############################
 ##### Explicit ODE solver #####
@@ -443,4 +444,325 @@ def dormand_prince_45():
 
 ###############################
 ########## ESDIRK23 ###########
-###############################
+#################
+
+def ESDIRK(fun, jac, t_span, x0, h0, absTol, relTol, Method, *args):
+    # ESDIRK23 Parameters 
+    #=========================================================================
+    # Runge-Kutta method parameters
+    if Method == 'ESDIRK12':
+        gamma = 1
+        AT = np.array([[0, 0], [0, gamma]])
+        c = np.array([0, 1])
+        b = AT[:, 1]
+        bhat = np.array([1/2, 1/2])
+        d = b - bhat
+        p = 1
+        phat = 2
+        s = 2
+    elif Method == 'ESDIRK23':
+        gamma = 1 - 1/np.sqrt(2)
+        a31 = (1 - gamma)/2
+        AT = np.array([[0, gamma, a31], 
+                       [0, gamma, a31], 
+                       [0, 0, gamma]])
+        c = np.array([0, 2*gamma, 1])
+        b = AT[:, 2]
+        bhat = np.array([(6*gamma - 1)/(12*gamma),
+                         1/(12*gamma*(1 - 2*gamma)),
+                         (1 - 3*gamma)/(3*(1 - 2*gamma))])
+        d = b - bhat
+        p = 2
+        phat = 3
+        s = 3
+    elif Method == 'ESDIRK34':
+        gamma = 0.43586652150845899942
+        a31 = 0.14073777472470619619
+        a32 = -0.1083655513813208000
+        AT = np.array([[0, gamma, a31, 0.10239940061991099768],
+                       [0, gamma, a32, -0.3768784522555561061],
+                       [0, 0, gamma, 0.83861253012718610911],
+                       [0, 0, 0, gamma]])
+        c = np.array([0, 0.87173304301691799883, 0.46823874485184439565, 1])
+        b = AT[:, 3]
+        bhat = np.array([0.15702489786032493710,
+                         0.11733044137043884870,
+                         0.61667803039212146434,
+                         0.10896663037711474985])
+        d = b - bhat
+        p = 3
+        phat = 4
+        s = 4
+    else:
+        raise ValueError(f"Unknown method: {Method}")
+
+    # error and convergence controller
+    epsilon = 0.8
+    tau = 0.1 * epsilon
+    itermax = 20
+    ke0 = 1.0 / phat
+    ke1 = 1.0 / phat
+    ke2 = 1.0 / phat
+    alpharef = 0.3
+    alphaJac = -0.2
+    alphaLU = -0.2
+    hrmin = 0.01
+    hrmax = 10
+    
+    # Initialize info dictionary
+    info = {
+        'Method': Method,
+        'nStage': s,
+        'absTol': absTol,
+        'relTol': relTol,
+        'iterMax': itermax,
+        'tspan': t_span,
+        'nFun': 0,
+        'nJac': 0,
+        'nLU': 0,
+        'nBack': 0,
+        'nStep': 0,
+        'nAccept': 0,
+        'nFail': 0,
+        'nDiverge': 0,
+        'nSlowConv': 0
+    }
+    
+    # Initialize stats dictionary
+    stats = {
+        't': [],
+        'h': [],
+        'r': [],
+        'iter': [],
+        'Converged': [],
+        'Diverged': [],
+        'AcceptStep': [],
+        'SlowConv': []
+    }
+
+    # Main ESDIRK Integrator
+    nx = len(x0)
+    F = np.zeros((nx, s))
+    t = t_span[0]
+    tf = t_span[1]
+    x = x0.copy()
+    h = h0
+
+    # Evaluate initial function and Jacobian
+    F[:, 0], g = fun(t, x, *args)
+    info['nFun'] += 1
+    dfdx, dgdx = jac(t, x, *args)
+    info['nJac'] += 1
+    FreshJacobian = True
+    
+    if (t + h) > tf:
+        h = tf - t
+    
+    hgamma = h * gamma
+    dRdx = dgdx - hgamma * dfdx
+    LU = lu_factor(dRdx)
+    info['nLU'] += 1
+    hLU = h
+
+    FirstStep = True
+    ConvergenceRestriction = False
+    PreviousReject = False
+    iter_counts = np.zeros(s)
+
+    # Output storage
+    chunk = 100
+    Tout = np.zeros((chunk, 1))
+    Xout = np.zeros((chunk, nx))
+    Gout = np.zeros((chunk, nx))
+
+    Tout[0, 0] = t
+    Xout[0, :] = x
+    Gout[0, :] = g
+
+    while t < tf:
+        info['nStep'] += 1
+        i = 1
+        diverging = False
+        SlowConvergence = False
+        alpha = 0.0
+        Converged = True
+
+        # A step in the ESDIRK method
+        while (i < s) and Converged:
+            i += 1
+            phi = g + F[:, :i-1] @ (h * AT[:i-1, i-1])
+
+            # Initial guess for the state
+            if i == 2:
+                dt = c[i-1] * h
+                G = g + dt * F[:, 0]
+                X = x + np.linalg.solve(dgdx, (G - g).reshape(-1, 1)).flatten()
+            else:
+                dt = c[i-1] * h
+                G = g + dt * F[:, 0]
+                X = x + np.linalg.solve(dgdx, (G - g).reshape(-1, 1)).flatten()
+
+            T = t + dt
+
+            F[:, i-1], G = fun(T, X, *args)
+            info['nFun'] += 1
+            R = G - hgamma * F[:, i-1] - phi
+            rNewton = np.linalg.norm(R / (absTol + np.abs(G) * relTol), np.inf)
+            Converged = (rNewton < tau)
+            
+            # Newton Iterations
+            while not Converged and not diverging and not SlowConvergence:
+                iter_counts[i-1] += 1
+                dX = lu_solve(LU, R)
+                info['nBack'] += 1
+                X = X - dX
+                rNewtonOld = rNewton
+                
+                F[:, i-1], G = fun(T, X, *args)
+                info['nFun'] += 1
+                R = G - hgamma * F[:, i-1] - phi
+                rNewton = np.linalg.norm(R / (absTol + np.abs(G) * relTol), np.inf)
+                alpha = max(alpha, rNewton / rNewtonOld)
+                Converged = (rNewton < tau)
+                diverging = (alpha >= 1)
+                SlowConvergence = (iter_counts[i-1] >= itermax)
+
+        diverging = (alpha >= 1) * i  # Record which stage is diverging
+
+        # Store stats for this step
+        stats['t'].append(t)
+        stats['h'].append(h)
+        stats['r'].append(np.nan)
+        stats['iter'].append(iter_counts.copy())
+        stats['Converged'].append(Converged)
+        stats['Diverged'].append(diverging)
+        stats['AcceptStep'].append(False)
+        stats['SlowConv'].append(SlowConvergence * i)
+        
+        iter_counts[:] = 0  # Reset iteration counts
+
+        # Error and Convergence Controller
+        if Converged and alpha > 0:
+            # Error estimation
+            e = F @ (h * d)
+            r = np.linalg.norm(e / (absTol + np.abs(G) * relTol), np.inf)
+            CurrentStepAccept = (r <= 1.0)
+            r = max(r, np.finfo(float).eps)
+            stats['r'][-1] = r
+            
+            # Step Length Controller
+            if CurrentStepAccept:
+                stats['AcceptStep'][-1] = True
+                info['nAccept'] += 1
+                
+                if FirstStep or PreviousReject or ConvergenceRestriction:
+                    # Asymptotic step length controller
+                    hr = 0.75 * (epsilon / r) ** ke0
+                else:
+                    # Predictive controller
+                    s0 = h / hacc
+                    s1 = max(hrmin, min(hrmax, (racc / r) ** ke1))
+                    s2 = max(hrmin, min(hrmax, (epsilon / r) ** ke2))
+                    hr = 0.95 * s0 * s1 * s2
+                
+                racc = r
+                hacc = h
+                FirstStep = False
+                PreviousReject = False
+                ConvergenceRestriction = False
+                
+                # Next Step
+                t = T
+                x = X
+                g = G
+                F[:, 0] = F[:, s-1]
+            else:  # Reject current step
+                info['nFail'] += 1
+                if PreviousReject:
+                    kest = np.log(r / rrej) / np.log(h / hrej)
+                    kest = min(max(0.1, kest), phat)
+                    hr = max(hrmin, min(hrmax, (epsilon / r) ** (1 / kest)))
+                else:
+                    hr = max(hrmin, min(hrmax, (epsilon / r) ** ke0))
+                rrej = r
+                hrej = h
+                PreviousReject = True
+            
+            # Convergence control
+            halpha = alpharef / alpha
+            if alpha > alpharef:
+                ConvergenceRestriction = True
+                if hr < halpha:
+                    h = max(hrmin, min(hrmax, hr)) * h
+                else:
+                    h = max(hrmin, min(hrmax, halpha)) * h
+            else:
+                h = max(hrmin, min(hrmax, hr)) * h
+            
+            h = max(1e-8, h)
+            if (t + h) > tf:
+                h = tf - t
+    
+            # Jacobian Update Strategy
+            FreshJacobian = False
+            if alpha > alphaJac:
+                dfdx, dgdx = jac(t, x, *args)
+                info['nJac'] += 1
+                FreshJacobian = True
+                hgamma = h * gamma
+                dRdx = dgdx - hgamma * dfdx
+                LU = lu_factor(dRdx)
+                info['nLU'] += 1
+                hLU = h
+            elif (abs(h - hLU) / hLU) > alphaLU:
+                hgamma = h * gamma
+                dRdx = dgdx - hgamma * dfdx
+                LU = lu_factor(dRdx)
+                info['nLU'] += 1
+                hLU = h
+        else:
+            info['nFail'] += 1
+            CurrentStepAccept = False
+            ConvergenceRestriction = True
+            
+            if FreshJacobian and diverging:
+                h = max(0.5 * hrmin, alpharef / alpha) * h
+                info['nDiverge'] += 1
+            elif FreshJacobian:
+                if alpha > alpharef:
+                    h = max(0.5 * hrmin, alpharef / alpha) * h
+                else:
+                    h = 0.5 * h
+            
+            if not FreshJacobian:
+                dfdx, dgdx = jac(t, x, *args)
+                info['nJac'] += 1
+                FreshJacobian = True
+            
+            hgamma = h * gamma
+            dRdx = dgdx - hgamma * dfdx
+            LU = lu_factor(dRdx)
+            info['nLU'] += 1
+            hLU = h
+
+        # Storage of variables for output
+        if CurrentStepAccept:
+            nAccept = info['nAccept']
+            if nAccept >= len(Tout):
+                Tout = np.vstack([Tout, np.zeros((chunk, 1))])
+                Xout = np.vstack([Xout, np.zeros((chunk, nx))])
+                Gout = np.vstack([Gout, np.zeros((chunk, nx))])
+            
+            Tout[nAccept, 0] = t
+            Xout[nAccept, :] = x
+            Gout[nAccept, :] = g
+
+    info['nSlowConv'] = len([x for x in stats['SlowConv'] if x != 0])
+    
+    # Trim output arrays
+    nAccept = info['nAccept']
+    Tout = Tout[:nAccept, 0]
+    Xout = Xout[:nAccept, :]
+    Gout = Gout[:nAccept, :]
+
+    return Tout, Xout, Gout, info, stats
