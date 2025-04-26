@@ -234,9 +234,9 @@ def PFR_3state_model(t, x, u, p):
     PFR Advection-Diffusion-Reaction model with 3 states: CA, CB, T.
 
     PDE System:
-        dCA/dt = -v * dCA/dz + D * d2CA/dz2 - k(T) * CA * CB
-        dCB/dt = -v * dCB/dz + D * d2CB/dz2 - 2k(T) * CA * CB
-        dT/dt  = -v * dT/dz  + D * d2T/dz2  + beta * k(T) * CA * CB
+        dCA/dt = -v * dCA/dz + DA * d2CA/dz2 - k(T) * CA * CB
+        dCB/dt = -v * dCB/dz + DB * d2CB/dz2 - 2k(T) * CA * CB
+        dT/dt  = -v * dT/dz  + DT * d2T/dz2  + beta * k(T) * CA * CB
 
     Boundary conditions:
         - Inlet (z=0): Dirichlet (Cin values)
@@ -252,85 +252,241 @@ def PFR_3state_model(t, x, u, p):
         Inlet conditions: [CAin, CBin, Tin]
     p : dict
         Parameters:
-            - Nz : int       (number of spatial points)
+            - L : int        (Length of the reactor)
             - dz : float     (spatial step)
             - v : float      (velocity)
-            - D : float      (diffusivity)
-            - beta : float   (heat of reaction)
-            - Ea_R : float   (activation energy / gas constant)
+            - D : float      (diffusivity in shape [DA, DB, DT])
+            - beta : float   (heat of reaction) = -DeltaHr / (p * cp)
+            - k : function   (reaction rate constant)
             - k0 : float     (pre-exponential factor)
 
     Returns:
     --------
-    xdot : array-like
+    xdot : array-like   [CA_0',...,CA_n-1', CB_0',...,CB_n-1', T_0',...,T_n-1']
         Time derivatives of state variables
     """
     # Unpack parameters
-    n = p["Nz"]
+
+
+
+
+    CA, CB, T = x
+    CAin, CBin, Tin = u
+    n = len(CA)
     dz = p["dz"]
     v = p["v"]
     D = p["D"]
+    k = p["k"]
+    DA, DB, DT = D
     beta = p["beta"]
-    Ea_R = p["Ea_R"]
-    k0 = p["k0"]
+    v = p["v"]          #F/A
 
-    # Unpack inputs
-    cAin, cBin, Tin = u
+    # Initialize derivatives
+    dCA_dt = np.zeros(n)
+    dCB_dt = np.zeros(n)
+    dT_dt = np.zeros(n)
 
-    # Unpack states
-    cA = x[0:n]
-    cB = x[n:2*n]
-    T  = x[2*n:3*n]
+    # Reaction term
+    r = k(T) * CA * CB
 
-    # Reaction rate function (Arrhenius)
-    def k(T_local):
-        return k0 * np.exp(-Ea_R / T_local)
-
-    # Allocate derivatives
-    dcA_dt = np.zeros(n)
-    dcB_dt = np.zeros(n)
-    dT_dt  = np.zeros(n)
-
-    # Finite difference loop
+    # Loop over spatial points
     for i in range(n):
-        # Local reaction rate
-        r = k(T[i]) * cA[i] * cB[i]
-
-        if i == 0:
-            # Inlet boundary (Dirichlet for CA, CB, T)
-            dCA_dz = (cA[i] - cAin) / dz
-            dCB_dz = (cB[i] - cBin) / dz
-            dT_dz  = (T[i] - Tin) / dz
-
-            d2CA_dz2 = 0
-            d2CB_dz2 = 0
-            d2T_dz2  = 0
-
-        elif i == n - 1:
-            # Outlet boundary (Neumann ∂C/∂z = 0, so ∂²C/∂z² ≈ 0)
-            dCA_dz = (cA[i] - cA[i-1]) / dz
-            dCB_dz = (cB[i] - cB[i-1]) / dz
-            dT_dz  = (T[i] - T[i-1]) / dz
-
-            d2CA_dz2 = 0
-            d2CB_dz2 = 0
-            d2T_dz2  = 0
-
+        # Convection and diffusion terms for CA
+        if i == 0:  # Inlet boundary (Dirichlet)
+            NconvA = v * CAin
+            JA = 0
         else:
-            # Interior nodes: upwind (1st) and central (2nd)
-            dCA_dz = (cA[i] - cA[i-1]) / dz
-            dCB_dz = (cB[i] - cB[i-1]) / dz
-            dT_dz  = (T[i]  - T[i-1])  / dz
+            NconvA = v * CA[i-1]
+            JA = -DA * (CA[i] - CA[i-1]) / dz
 
-            d2CA_dz2 = (cA[i+1] - 2*cA[i] + cA[i-1]) / dz**2
-            d2CB_dz2 = (cB[i+1] - 2*cB[i] + cB[i-1]) / dz**2
-            d2T_dz2  = (T[i+1]  - 2*T[i]  + T[i-1])  / dz**2
+        if i == n-1:  # Outlet boundary (Neumann)
+            NconvA_next = 0
+            JA_next = 0
+        else:
+            NconvA_next = v * CA[i]
+            JA_next = -DA * (CA[i+1] - CA[i]) / dz
 
-        # Advection + diffusion + reaction
-        dcA_dt[i] = -v * dCA_dz + D * d2CA_dz2 - r
-        dcB_dt[i] = -v * dCB_dz + D * d2CB_dz2 - 2 * r
-        dT_dt[i]  = -v * dT_dz  + D * d2T_dz2  + beta * r
+        NA = NconvA + JA
+        NA_next = NconvA_next + JA_next
+        dCA_dt[i] = (NA_next - NA) / dz - r[i]
 
-    # Stack derivatives
-    xdot = np.concatenate([dcA_dt, dcB_dt, dT_dt])
+        # Convection and diffusion terms for CB
+        if i == 0:  # Inlet boundary (Dirichlet)
+            NconvB = v * CBin
+            JB = 0
+        else:
+            NconvB = v * CB[i-1]
+            JB = -DB * (CB[i] - CB[i-1]) / dz
+
+        if i == n-1:  # Outlet boundary (Neumann)
+            NconvB_next = 0
+            JB_next = 0
+        else:
+            NconvB_next = v * CB[i]
+            JB_next = -DB * (CB[i+1] - CB[i]) / dz
+
+        NB = NconvB + JB
+        NB_next = NconvB_next + JB_next
+        dCB_dt[i] = (NB_next - NB) / dz - 2 * r[i]
+
+        # Convection and diffusion terms for T
+        if i == 0:  # Inlet boundary (Dirichlet)
+            NconvT = v * Tin
+            JT = 0
+        else:
+            NconvT = v * T[i-1]
+            JT = -DT * (T[i] - T[i-1]) / dz
+
+        if i == n-1:  # Outlet boundary (Neumann)
+            NconvT_next = 0
+            JT_next = 0
+        else:
+            NconvT_next = v * T[i]
+            JT_next = -DT * (T[i+1] - T[i]) / dz
+
+        NT = NconvT + JT
+        NT_next = NconvT_next + JT_next
+        dT_dt[i] = (NT_next - NT) / dz + beta * r[i]
+
+    # Combine derivatives into a single vector
+    xdot = np.concatenate([dCA_dt, dCB_dt, dT_dt])
     return xdot
+
+def jacobian_PFR3(t, x, u, p):
+    """
+    Jacobian of the PFR Advection-Diffusion-Reaction model with 3 states: CA, CB, T.
+
+    Parameters:
+    -----------
+    t : float
+        Time
+    x : array-like
+        State vector: [CA_0,...,CA_n-1, CB_0,...,CB_n-1, T_0,...,T_n-1]
+    u : array-like
+        Inlet conditions: [CAin, CBin, Tin]
+    p : dict
+        Parameters:
+            - L : int        (Length of the reactor)
+            - dz : float     (spatial step)
+            - v : float      (velocity)
+            - D : float      (diffusivity in shape [DA, DB, DT])
+            - beta : float   (heat of reaction) = -DeltaHr / (p * cp)
+            - k : function   (reaction rate constant)
+            - k0 : float     (pre-exponential factor)
+
+    Returns:
+    --------
+    J : array-like
+        Jacobian matrix of the system
+
+    """
+    # Unpack parameters
+    CAin, CBin, Tin = u
+    n = len(x) // 3
+    dz = p["dz"]
+    v = p["v"]
+    D = p["D"]
+    k = p["k"]
+    DA, DB, DT = D
+    beta = p["beta"]
+
+    # Initialize Jacobian matrix
+    J = np.zeros((3*n, 3*n))
+
+    # Fill in the Jacobian matrix based on the model equations
+
+    # We start with the derivatives of CA
+    for i in range(n):
+        # Diagonal elements
+        J[i, i] = -v / dz - 2 * k(x[i]) * x[n + i] - (DA / dz**2)
+        if i > 0:
+            J[i, i-1] = DA / dz**2
+        if i < n - 1:
+            J[i, i+1] = DA / dz**2
+
+        # Off-diagonal elements
+        J[i, n + i] = -k(x[i]) * x[i]
+        J[i, 2*n + i] = beta * k(x[i]) * x[n + i]
+        J[i, 3*n + i] = -2 * k(x[i]) * x[n + i]
+        
+
+
+    return J
+
+
+
+def PFR_1state_model(t, x, u, p):
+    """
+    PFR Advection-Diffusion-Reaction model with 1 states: T.
+
+    PDE System:
+        dT/dt = -v * dT/dz + DT * d2T/dz2  + beta * k(T) * CA * CB
+    
+    Boundary conditions:
+        - Inlet (z=0): Dirichlet (Cin values)
+        - Outlet (z=L): Neumann (no diffusion, ∂C/∂z = 0)
+    
+    Parameters:
+    -----------
+    t : float
+        Time
+    x : array-like
+        State vector: [T_0,...,T_n-1]
+    u : array-like
+        Inlet conditions: [CAin, CBin, Tin]
+    p : dict
+        Parameters:
+            - L : int        (Length of the reactor)
+            - dz : float     (spatial step)
+            - v : float      (velocity)
+            - D : float      (diffusivity in shape [DT])
+            - beta : float   (heat of reaction) = -DeltaHr / (p * cp)
+            - k : function   (reaction rate constant)
+            - k0 : float     (pre-exponential factor)
+    Returns:
+    --------
+    xdot : array-like   [T_0',...,T_n-1']
+        Time derivatives of state variables
+
+    """
+
+    # Unpack parameters
+    CAin, CBin, Tin = u
+    n = len(x)
+    dz = p["dz"]
+    v = p["v"]
+    D = p["D"]
+    k = p["k"]
+    DT = D
+    beta = p["beta"]
+    v = p["v"]          #F/A
+
+    # Initialize derivatives
+    dT_dt = np.zeros(n)
+
+    CA = CAin + (1 / beta) * (Tin - x)
+    CB = CBin + (2 / beta) * (Tin - x)
+
+
+    # Loop over spatial points
+    for i in range(n):
+        # Convection and diffusion terms for T
+        if i == 0:  # Inlet boundary (Dirichlet)
+            NconvT = v * Tin
+            JT = 0
+        else:
+            NconvT = v * x[i-1]
+            JT = -DT * (x[i] - x[i-1]) / dz
+
+        if i == n-1:  # Outlet boundary (Neumann)
+            NconvT_next = 0
+            JT_next = 0
+        else:
+            NconvT_next = v * x[i]
+            JT_next = -DT * (x[i+1] - x[i]) / dz
+
+        NT = NconvT + JT
+        NT_next = NconvT_next + JT_next
+        dT_dt[i] = (NT_next - NT) / dz + beta * k(x[i]) * CA[i] * CB[i]
+
+    return dT_dt
