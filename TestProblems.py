@@ -2,12 +2,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Function for the prey-predator model
-def prey_predator_model(alpha, beta):
+def prey_predator_model(alpha, beta, esdirk = False):
     def f(t, z):
         x, y = z
         dxdt = alpha * x - beta * x * y
         dydt = beta * x * y - alpha * y
-        return np.array([dxdt, dydt])
+        if esdirk:
+            return np.array([dxdt, dydt]), z
+        else:
+            return np.array([dxdt, dydt])
     
     def jacobian(t, z):
         x, y = z
@@ -15,18 +18,25 @@ def prey_predator_model(alpha, beta):
         df_dy = -beta * x
         dg_dx = beta * y
         dg_dy = beta * x - alpha
-        return np.array([[df_dx, df_dy],
+        if esdirk:
+            return np.array([[df_dx, df_dy],
+                             [dg_dx, dg_dy]]), np.eye(2)
+        else:
+            return np.array([[df_dx, df_dy],
                          [dg_dx, dg_dy]])
     
     return f, jacobian
 
 #Function for the Van der Pol model
-def van_der_pol_model(mu):
+def van_der_pol_model(mu, esdirk = False):
     def f(t, z):
         x, y = z
         dxdt = y
         dydt = mu * (1 - x**2) * y - x
-        return np.array([dxdt, dydt])
+        if esdirk:
+            return np.array([dxdt, dydt]), z
+        else:
+            return np.array([dxdt, dydt])
     
     def jacobian(t, z):
         x, y = z
@@ -34,7 +44,11 @@ def van_der_pol_model(mu):
         df_dy = 1
         dg_dx = -2 * mu * x * y - 1
         dg_dy = mu * (1 - x**2)
-        return np.array([[df_dx, df_dy],
+        if esdirk:
+            return np.array([[df_dx, df_dy],
+                             [dg_dx, dg_dy]]), np.eye(2)
+        else:
+            return np.array([[df_dx, df_dy],
                          [dg_dx, dg_dy]])
     
     return f, jacobian
@@ -57,7 +71,7 @@ D = [0.1, 0.1, 0.1] # Diffusion coefficients
 beta = - deltaHr / (p * cp) 
 
 
-def CSTR_3state_model(params):
+def CSTR_3state_model(params, esdirk = False):
     # Functions for Chemical Reaction in adiabatic reactors
     # Model of the CSTR (3 state Model)
     # Parameters:
@@ -98,8 +112,11 @@ def CSTR_3state_model(params):
         dCA_dt = (F/V) * (CAin-CA) + RA(T, CA, CB)
         dCB_dt = (F/V) * (CBin - CB ) + RB(T, CA, CB)
         dT_dt = (F/V) * (Tin - T) + RT(T, CA, CB)
+        if esdirk:
+            return np.array([dCA_dt, dCB_dt, dT_dt]), x
+        else:
 
-        return np.array([dCA_dt, dCB_dt, dT_dt])
+            return np.array([dCA_dt, dCB_dt, dT_dt])
     
     def jacobian(t, x):
         CA, CB, T = x
@@ -108,13 +125,16 @@ def CSTR_3state_model(params):
         J = np.array([[ -F/V - k0 * np.exp(-Ea_R / T)*CB, - k0 * np.exp(-Ea_R / T) * CA, - (Ea_R / T**2) *(k0 * np.exp(-Ea_R / T) * CA * CB)],
                         [ - 2*k0 * np.exp(-Ea_R / T)*CB, - F/V - 2*k0 * np.exp(-Ea_R / T) * CA, - (Ea_R / T**2) *(2*k0 * np.exp(-Ea_R / T) * CA * CB)],
                         [ beta * k0 * np.exp(-Ea_R / T) * CB, beta * k0 * np.exp(-Ea_R / T) * CA, -F/V - (Ea_R / T**2) *(beta * k0 * np.exp(-Ea_R / T) * CA * CB)]])
-        return J
+        if esdirk:
+            return J, np.eye(3)
+        else:
+            return J
     
     return f, jacobian
 
 # Function for the CSTR (1 state Model)
 
-def CSTR_1state_model(params):
+def CSTR_1state_model(params, esdirk = False):
     F, V, CA_in, CB_in, Tin = params
 
     def f(t, T):
@@ -124,7 +144,10 @@ def CSTR_1state_model(params):
         CA = CA_in + (1 / beta) * (Tin - T)
         CB = CB_in + (2 / beta) * (Tin - T)
         r = k(T) * CA * CB
-        return F / V * (Tin - T) + beta * r
+        if esdirk:
+            return F / V * (Tin - T) + beta * r, T
+        else:
+            return F / V * (Tin - T) + beta * r
 
     # Jacobian for the CSTR (1 state Model)
     def jacobian(t, T):
@@ -135,8 +158,11 @@ def CSTR_1state_model(params):
         CB = CB_in + (2 / beta) * (Tin - T)
         # Jacobian matrix
         J = np.array([-F/V + beta(k(T)*(Ea_R / T**2) * CA * CB + k(T) * CB * (-1/beta) + k(t) * CA * (-2/beta))])
-        
-        return J  
+        if esdirk:
+            return J, np.eye(1)
+        else:
+            return J
+
     return f, jacobian
 
 """""
