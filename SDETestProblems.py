@@ -4,8 +4,8 @@ import numpy as np
 def prey_predator_model(alpha, beta, esdirk=False, SDE=False, sigma_x=0.1, sigma_y=0.1):
     def f(t, z):
         x, y = z
-        dxdt = alpha * x - beta * x * y
-        dydt = beta * x * y - alpha * y
+        dxdt = alpha * (1-y)*x
+        dydt = - beta * (1-x)*y
         if esdirk:
             return np.array([dxdt, dydt]), z
         else:
@@ -17,10 +17,10 @@ def prey_predator_model(alpha, beta, esdirk=False, SDE=False, sigma_x=0.1, sigma
     
     def jacobian(t, z):
         x, y = z
-        df_dx = alpha - beta * y
-        df_dy = -beta * x
+        df_dx = alpha * (1-y)
+        df_dy = - alpha * x
         dg_dx = beta * y
-        dg_dy = beta * x - alpha
+        dg_dy = -beta * (1 - x)
         if esdirk:
             return np.array([[df_dx, df_dy],
                            [dg_dx, dg_dy]]), np.eye(2)
