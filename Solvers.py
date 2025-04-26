@@ -193,21 +193,18 @@ def StdWeinerProcess(T, N, nW, Ns, seed = False):
     return W, Tw, dW
 
 
-# Explicit-explicit method for SDE with fixed step size
-def SDEsolverExplicitExplicit(ffun, gfun, T, x0, W, *varargin):
-    N = len(T)
-    nx = len(x0)
-    X = np.zeros((nx, N))
-
+# Implement Euler-Maruyama SDE solver
+def SDEsolverExplicitExplicit(f, g, t, x0, W, p=None):
+    n = len(t)
+    d = len(x0)
+    X = np.zeros((d, n))
     X[:, 0] = x0
     
-    for k in range(N-1):
-        f = ffun(T[k], X[:, k], *varargin)
-        g = gfun(T[k], X[:, k], *varargin)
-        dt = T[k+1] - T[k]
-        dW = W[:, k+1] - W[:, k]
-        psi = X[:, k] + g * dW
-        X[:, k+1] = psi + f * dt
+    for i in range(n-1):
+        dt = t[i+1] - t[i]
+        dW = W[:, i+1] - W[:, i]
+        X[:, i+1] = X[:, i] + f(t[i], X[:, i]) * dt + g(t[i], X[:, i]) @ dW
+    
     return X
 
 #Newtons method for SDE
