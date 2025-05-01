@@ -7,6 +7,29 @@ from scipy.linalg import lu_factor, lu_solve
 
 # Explicit Euler with fixed step size
 def ExplicitEulerFixedSteps(fun, t0, tN, N, x0, *args):
+    """
+    Explicit Euler method with fixed step size.
+    Parameters
+    ----------
+    fun : function
+        Function to compute the right-hand side of the ODE.
+    t0 : float
+        Initial time.
+    tN : float
+        Final time.
+    N : int
+        Number of steps.
+    x0 : array_like
+        Initial condition.
+    *args : tuple
+        Additional arguments to pass to the function.
+    Returns
+    -------
+    T : array_like
+        Time points.
+    X : array_like
+        Solution at each time point.
+    """
     # Compute step size and allocate memory
     dt = (tN - t0) / N
     nx = x0.shape[0]
@@ -24,6 +47,34 @@ def ExplicitEulerFixedSteps(fun, t0, tN, N, x0, *args):
 
 # Explicit Euler with adaptive step size
 def ExplicitEulerAdaptiveStep(f, tspan, x0, h0, abstol, reltol, *args):
+    """
+    Explicit Euler method with adaptive step size.
+    Parameters
+    ----------
+    f : function
+        Function to compute the right-hand side of the ODE.
+    tspan : tuple
+        Tuple containing the initial and final time.
+    x0 : array_like
+        Initial condition.
+    h0 : float
+        Initial step size.
+    abstol : float
+        Absolute tolerance.
+    reltol : float
+        Relative tolerance.
+    *args : tuple
+        Additional arguments to pass to the function.
+    
+    Returns
+    -------
+    T : array_like
+        Time points.
+    X : array_like
+        Solution at each time point.
+    H : array_like
+        Step sizes used at each time point.
+    """
     # Initialize variables
     t0 = tspan[0]
     tf = tspan[1]

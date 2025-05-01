@@ -122,7 +122,7 @@ def CSTR_3state_model(params, esdirk = False):
         CA, CB, T = x
         beta = - deltaHr / (p * cp) 
         # Jacobian matrix
-        J = np.array([[ -F/V - k0 * np.exp(-Ea_R / T)*CB, - k0 * np.exp(-Ea_R / T) * CA, - (Ea_R / T**2) *(k0 * np.exp(-Ea_R / T) * CA * CB)],
+        J = np.array([[ -F/V - k0 * np.exp(-Ea_R / T)*CB, - k0 * np.exp(-Ea_R / T) * CA, - (Ea_R / T**2) * (k0 * np.exp(-Ea_R / T) * CA * CB)],
                         [ - 2*k0 * np.exp(-Ea_R / T)*CB, - F/V - 2*k0 * np.exp(-Ea_R / T) * CA, - (Ea_R / T**2) *(2*k0 * np.exp(-Ea_R / T) * CA * CB)],
                         [ beta * k0 * np.exp(-Ea_R / T) * CB, beta * k0 * np.exp(-Ea_R / T) * CA, -F/V - (Ea_R / T**2) *(beta * k0 * np.exp(-Ea_R / T) * CA * CB)]])
         if esdirk:
@@ -315,64 +315,63 @@ def PFR_3state_model(t, x, u, p):
     # Reaction term
     r = k(T) * CA * CB
 
-    # Loop over spatial points
-    for i in range(n):
-        # Convection and diffusion terms for CA
-        if i == 0:  # Inlet boundary (Dirichlet)
-            NconvA = v * CAin
-            JA = 0
-        else:
-            NconvA = v * CA[i-1]
-            JA = -DA * (CA[i] - CA[i-1]) / dz
+    ### Convection and diffusion terms for CA
+    #Convection term
+    NconvA = np.zeros(n+1)
+    NconvA[0] = v * CAin        # Inlet Boundary (Dirichlet)
+    NconvA[1:n+1] = v * CA[0:n]
 
-        if i == n-1:  # Outlet boundary (Neumann)
-            NconvA_next = 0
-            JA_next = 0
-        else:
-            NconvA_next = v * CA[i]
-            JA_next = -DA * (CA[i+1] - CA[i]) / dz
+    #Diffusion term
+    JA = np.zeros(n+1)
+    JA[1:n] = (-DA / dz) * (CA[1:n] - CA[0:n-1])
+    JA[0] = 0                   # Inlet Boundary (Dirichlet)
+    JA[-1] = 0                  # Outlet Boundary (Neumann)
 
-        NA = NconvA + JA
-        NA_next = NconvA_next + JA_next
-        dCA_dt[i] = (NA_next - NA) / dz - r[i]
+    # Flux = Convection + Diffusion
+    NA = NconvA + JA
 
-        # Convection and diffusion terms for CB
-        if i == 0:  # Inlet boundary (Dirichlet)
-            NconvB = v * CBin
-            JB = 0
-        else:
-            NconvB = v * CB[i-1]
-            JB = -DB * (CB[i] - CB[i-1]) / dz
+    # Reaction term
+    rA = -r
 
-        if i == n-1:  # Outlet boundary (Neumann)
-            NconvB_next = 0
-            JB_next = 0
-        else:
-            NconvB_next = v * CB[i]
-            JB_next = -DB * (CB[i+1] - CB[i]) / dz
+    # Differential Equation for CA
+    dCA_dt = (NA[1:n+1] - NA[0:n]) / (-dz) + rA
 
-        NB = NconvB + JB
-        NB_next = NconvB_next + JB_next
-        dCB_dt[i] = (NB_next - NB) / dz - 2 * r[i]
+    ### Convection and diffusion terms for CB
+    #Convection term
+    NconvB = np.zeros(n+1)
+    NconvB[1:n+1] = v * CB[0:n]
+    NconvB[0] = v * CBin        # Inlet Boundary (Dirichlet)
 
-        # Convection and diffusion terms for T
-        if i == 0:  # Inlet boundary (Dirichlet)
-            NconvT = v * Tin
-            JT = 0
-        else:
-            NconvT = v * T[i-1]
-            JT = -DT * (T[i] - T[i-1]) / dz
+    #Diffusion term
+    JB = np.zeros(n+1)
+    JB[1:n] = (-DB / dz) * (CB[1:n] - CB[0:n-1])
+    JB[0] = 0                   # Inlet Boundary (Dirichlet)
+    JB[-1] = 0                  # Outlet Boundary (Neumann)
 
-        if i == n-1:  # Outlet boundary (Neumann)
-            NconvT_next = 0
-            JT_next = 0
-        else:
-            NconvT_next = v * T[i]
-            JT_next = -DT * (T[i+1] - T[i]) / dz
+    # Flux = Convection + Diffusion
+    NB = NconvB + JB
+    # Reaction term
+    rB = -2 * r
+    # Differential Equation for CB
+    dCB_dt = (NB[1:n+1] - NB[0:n]) / (-dz) + rB
 
-        NT = NconvT + JT
-        NT_next = NconvT_next + JT_next
-        dT_dt[i] = (NT_next - NT) / dz + beta * r[i]
+    ### Convection and diffusion terms for T
+    #Convection term
+    NconvT = np.zeros(n+1)
+    NconvT[1:n+1] = v * T[0:n]
+    NconvT[0] = v * Tin         # Inlet Boundary (Dirichlet)
+
+    #Diffusion term
+    JT = np.zeros(n+1)
+    JT[1:n] = (-DT / dz) * (T[1:n] - T[0:n-1])
+    JT[0] = 0                   # Inlet Boundary (Dirichlet)
+    JT[-1] = 0                  # Outlet Boundary (Neumann)
+    # Flux = Convection + Diffusion
+    NT = NconvT + JT
+    # Reaction term
+    rT = beta * r
+    # Differential Equation for T
+    dT_dt = (NT[1:n+1] - NT[0:n]) / (-dz) + rT
 
     # Combine derivatives into a single vector
     xdot = np.concatenate([dCA_dt, dCB_dt, dT_dt])
@@ -408,7 +407,8 @@ def jacobian_PFR3(t, x, u, p):
     """
     # Unpack parameters
     CAin, CBin, Tin = u
-    n = len(x) // 3
+    CA, CB, T = x
+    n = len(CA)
     dz = p["dz"]
     v = p["v"]
     D = p["D"]
@@ -417,24 +417,25 @@ def jacobian_PFR3(t, x, u, p):
     beta = p["beta"]
 
     # Initialize Jacobian matrix
-    J = np.zeros((3*n, 3*n))
+    J = np.zeros((n,3,3))
 
     # Fill in the Jacobian matrix based on the model equations
 
-    # We start with the derivatives of CA
-    for i in range(n):
-        # Diagonal elements
-        J[i, i] = -v / dz - 2 * k(x[i]) * x[n + i] - (DA / dz**2)
-        if i > 0:
-            J[i, i-1] = DA / dz**2
-        if i < n - 1:
-            J[i, i+1] = DA / dz**2
+    # We start with the equation of CAdot
 
-        # Off-diagonal elements
-        J[i, n + i] = -k(x[i]) * x[i]
-        J[i, 2*n + i] = beta * k(x[i]) * x[n + i]
-        J[i, 3*n + i] = -2 * k(x[i]) * x[n + i]
-        
+    J[:,0,0] = (v - DA / dz) / (-dz) + k(T) * CB
+    J[:,0,1] = - k(T) * CA
+    J[:,0,2] = - k(T) * CA * CB * (Ea_R / T**2)
+    
+    # Next, we fill in the equation of CBdot
+    J[:,1,0] = -2 * k(T) * CB
+    J[:,1,1] = (v - DB / dz) / (-dz) - 2 * k(T) * CA
+    J[:,1,2] = -2 * k(T) * CA * CB * (Ea_R / T**2)
+
+    # Finally, we fill in the equation of Tdot
+    J[:,2,0] = beta * k(T) * CB
+    J[:,2,1] = beta * k(T) * CA
+    J[:,2,2] = (v - DT / dz) / (-dz) + (Ea_R / T**2) * beta * k(T) * CA * CB
 
 
     return J
@@ -493,26 +494,75 @@ def PFR_1state_model(t, x, u, p):
     CA = CAin + (1 / beta) * (Tin - x)
     CB = CBin + (2 / beta) * (Tin - x)
 
+    # Reaction term
+    r = k(x) * CA * CB
+    # Initialize convection and diffusion terms
+    NconvT = np.zeros(n+1)
+    JT = np.zeros(n+1)
 
-    # Loop over spatial points
-    for i in range(n):
-        # Convection and diffusion terms for T
-        if i == 0:  # Inlet boundary (Dirichlet)
-            NconvT = v * Tin
-            JT = 0
-        else:
-            NconvT = v * x[i-1]
-            JT = -DT * (x[i] - x[i-1]) / dz
+    # Convection term
+    NconvT[0] = v * Tin        # Inlet Boundary (Dirichlet)
+    NconvT[1:n+1] = v * x[0:n]
 
-        if i == n-1:  # Outlet boundary (Neumann)
-            NconvT_next = 0
-            JT_next = 0
-        else:
-            NconvT_next = v * x[i]
-            JT_next = -DT * (x[i+1] - x[i]) / dz
+    # Diffusion term
+    JT[1:n] = (-DT / dz) * (x[1:n] - x[0:n-1])
+    JT[0] = 0                   # Inlet Boundary (Dirichlet)
+    JT[-1] = 0                  # Outlet Boundary (Neumann)
+    # Flux = Convection + Diffusion
+    NT = NconvT + JT
+    # Reaction term
+    rT = beta * r
+    # Differential Equation for T
+    dT_dt = (NT[1:n+1] - NT[0:n]) / (-dz) + rT
+    # Combine derivatives into a single vector
+    xdot = dT_dt
+    return xdot
 
-        NT = NconvT + JT
-        NT_next = NconvT_next + JT_next
-        dT_dt[i] = (NT_next - NT) / dz + beta * k(x[i]) * CA[i] * CB[i]
 
-    return dT_dt
+def jacobian_PFR1(t, x, u, p):
+    """
+    Jacobian of the PFR Advection-Diffusion-Reaction model with 1 state: T.
+
+    Parameters:
+    -----------
+    t : float
+        Time
+    x : array-like
+        State vector: [T_0,...,T_n-1]
+    u : array-like
+        Inlet conditions: [CAin, CBin, Tin]
+    p : dict
+        Parameters:
+            - L : int        (Length of the reactor)
+            - dz : float     (spatial step)
+            - v : float      (velocity)
+            - D : float      (diffusivity in shape [DT])
+            - beta : float   (heat of reaction) = -DeltaHr / (p * cp)
+            - k : function   (reaction rate constant)
+            - k0 : float     (pre-exponential factor)
+
+    Returns:
+    --------
+    J : array-like
+        Jacobian matrix of the system
+    """
+    # Unpack parameters
+    CAin, CBin, Tin = u
+    n = len(x)
+    dz = p["dz"]
+    v = p["v"]
+    D = p["D"]
+    k = p["k"]
+    DT = D
+    beta = p["beta"]
+
+    # Initialize Jacobian matrix
+    J = np.zeros((n))
+
+    # Compute CA and CB based on T
+    CA = CAin + (1 / beta) * (Tin - x)
+    CB = CBin + (2 / beta) * (Tin - x)
+
+
+    J = np.array([(v - DT / dz) / (-dz) + (Ea_R / x**2) * beta * k(x) * CA * CB])
+    return J
