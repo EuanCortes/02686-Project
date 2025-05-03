@@ -138,93 +138,121 @@ def ExplicitEulerAdaptiveStep(f, tspan, x0, h0, abstol, reltol, *args):
 ###############################
 
 # Newton's method for implicit Euler
-def NewtonsMethodODE(fun_jac, t, x, dt, xinit, tol, maxit, *args):
-    x_new = xinit
-    for i in range(maxit):
-        f, J = fun_jac(t + dt, x_new, *args)
-        dx = np.linalg.solve(J, -f)
-        x_new = x_new + dx
+def NewtonsMethodODE(f, jac, t, x, dt, xinit, tol, maxit, *args):
+    x_new = xinit.copy()
+    for _ in range(maxit):
+        # Calculate function and Jacobian at new time step
+        F = x_new - x - dt * f(t + dt, x_new, *args)
+        J = np.eye(len(x)) - dt * jac(t + dt, x_new, *args)
+        
+        # Newton update
+        dx = np.linalg.solve(J, -F)
+        x_new += dx
+        
         if np.linalg.norm(dx) < tol:
             break
     return x_new
 
-# Implicit Euler with fixed step size
-def ImplicitEulerFixedStep(fun_jac, ta, tb, N, xa, *args):
+def ImplicitEulerFixedStep(f, jac, ta, tb, N, xa, *args):
     # Compute step size and allocate memory
     dt = (tb - ta) / N
-    nx = xa.shape[0]
-    X = np.zeros((nx, N + 1))
+    nx = len(xa)
+    X = np.zeros((N + 1, nx))  # Changed to (N+1, nx) for better indexing
     T = np.zeros(N + 1)
-
+    
+    # Solver parameters
     tol = 1.0e-8
     maxit = 100
-
-    # Euler's Implicit Method
+    
+    # Initial conditions
     T[0] = ta
-    X = xa
+    X[0] = xa.copy()
+    
+    # Time stepping
     for k in range(N):
-        f = fun_jac(T[k], X[k], *args)
         T[k + 1] = T[k] + dt
-        xinit = X[k] + f * dt
-        X[:, k + 1] = NewtonsMethodODE(fun_jac, T[k], X[k], dt, xinit, tol, maxit, *args)
-
-    return T, X
+        # Initial guess (explicit Euler step)
+        xinit = X[k] + dt * f(T[k], X[k], *args)
+        # Solve implicit step using Newton's method
+        X[k + 1] = NewtonsMethodODE(f, jac, T[k], X[k], dt, xinit, tol, maxit, *args)
+    
+    return T, X.T  # Return transposed X to match original shape (nx, N+1)
 
 # Implicit Euler with adaptive step size
-def ExplicitEulerAdaptiveStep(f, tspan, x0, h0, abstol, reltol, *args):
+import numpy as np
+
+def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, *args):
+    """
+    Implicit Euler method with adaptive step size control
+    Args:
+        f: function(t, x, *args) returning f(x,t)
+        jac: function(t, x, *args) returning Jacobian matrix
+        tspan: tuple (t0, tf)
+        x0: initial condition
+        h0: initial step size
+        abstol: absolute tolerance
+        reltol: relative tolerance
+        maxit: maximum Newton iterations
+        *args: additional arguments for f and jac
+    """
     # Initialize variables
-    t0 = tspan[0]
-    tf = tspan[1]
-    # Initial conditions
+    t0, tf = tspan
     t = t0
-    x = x0
+    x = x0.copy()
     h = h0
 
-    hmin = 0.1
-    hmax = 5
-    epstol = 0.8
+    # Step size bounds
+    hmin = 0.01
+    hmax = 5.0
+    epstol = 0.8  # Safety factor
 
-    # Initialize output arrays
+    # Output storage
     T = [t0]
     X = [x0]
     H = [h0]
 
-    # Main loop
+    # Newton solver parameters
+    tol_newton = 1e-8
+
     while t < tf:
-        # Adjust step size
+        # Adjust step size to not exceed tf
         if t + h > tf:
             h = tf - t
 
-        fun = np.array(f(t, x))
-
         AcceptStep = False
         while not AcceptStep:
-            # Compute the next step
-            xnew = x + h * fun
+            # Compute candidate steps
+            # Full step
+            xinit = x + h * f(t, x, *args)  # Explicit Euler as initial guess
+            xnew = NewtonsMethodODE(f, jac, t, x, h, xinit, tol_newton, maxit, *args)
 
+            # Half steps
             hm = 0.5 * h
             tm = t + hm
-            xm = x + hm * fun
-            xnewm = xm + hm * f(tm, xm)
+            xinit_m = x + hm * f(t, x, *args)
+            xm = NewtonsMethodODE(f, jac, t, x, hm, xinit_m, tol_newton, maxit, *args)
+            xnewm = NewtonsMethodODE(f, jac, tm, xm, hm, xm, tol_newton, maxit, *args)
 
-            # Compute the error
-            err = np.abs(xnewm - xnew)
-            max1 = np.max([abstol, np.abs(xnewm) * reltol])
-            r = np.max(err / max1)
-            AcceptStep = (r <= 1)
+            # Error estimation
+            err = np.abs(xnew - xnewm)
+            scale = np.maximum(abstol, np.abs(xnewm) * reltol)
+            r = np.max(err / scale)
 
-            # Check if error is within tolerance
+            AcceptStep = (r <= 1.0)
+
             if AcceptStep:
-                # Update time and state
-                t = t + h
+                # Update solution
+                t += h
                 x = xnewm
-                # Store values
                 T.append(t)
                 X.append(x)
+                H.append(h)
+            else:
+                # Reject step and reduce h
+                h = max(hmin, min(hmax, h * 0.9 * (epstol/r)**0.25))
 
-            # Update step size
-            h = np.max([hmin, np.min([hmax, np.sqrt(epstol / r)])]) * h
-            H.append(h)
+            # Prevent h from becoming too small
+            h = max(hmin, min(hmax, h))
 
     return np.array(T), np.array(X), np.array(H)
 
@@ -359,101 +387,107 @@ def ExplicitRungeKuttaSolver(f, tspan, x0, h, solver, *args):
     return Tout, Xout
 
 
-# Runge-Kutta with adaptive step size
 def ExplicitRungeKuttaSolverAdaptive(f, tspan, x0, h0, solver, abstol, reltol, *args):
-    hmin = 0.1
+    hmin = 1e-6  # More reasonable minimum step size
     hmax = 5
     epstol = 0.8
+    maxiter = 100000  # Safety net to prevent infinite loops
 
-    #Solver is a dict
-
-    #Solver parameters
+    # Solver parameters
     s = solver["stages"]
     AT = solver["AT"]
     b = solver["b"]
     c = solver["c"]
 
-    #Parameters related to constant step size
-
-    #Size parameters
-    x = x0
+    # Initial conditions
+    x = np.array(x0)
     t = tspan[0]
     tf = tspan[1]
     nx = len(x0)
 
-    #Allocate memory
-    T = np.zeros((s))
-    X = np.zeros((nx,s))
-    F = np.zeros((nx,s))
-    Tm = np.zeros((s))
-    Xm = np.zeros((nx,s))
-    Fm = np.zeros((nx,s))
+    # Allocate memory
+    T = np.zeros(s)
+    X = np.zeros((nx, s))
+    F = np.zeros((nx, s))
+    Tm = np.zeros(s)
+    Xm = np.zeros((nx, s))
+    Fm = np.zeros((nx, s))
     
+    # Output storage
     Tout = [t]
-    Xout = [x.T]
+    Xout = [x.copy()]
     H = [h0]
 
     h = h0
+    iterations = 0
 
-    while t < tf:
-        #Adjust step size
+    while t < tf and iterations < maxiter:
+        iterations += 1
+        
+        # Adjust step size to not exceed tf
         if t + h > tf:
             h = tf - t
 
-        #Compute next step
-
-        hm = 0.5*h
-        tm = t + hm
-
-        #Compute stages
-        #Stage 1
+        # Compute stages for full step and half steps
+        # Full step stages
         T[0] = t
-        X[:,0] = x
-        F[:,0] = f(T[0],X[:,0],*args)
+        X[:, 0] = x
+        F[:, 0] = f(T[0], X[:, 0], *args)
+        
+        # Half step stages
+        hm = 0.5 * h
+        tm = t + hm
         Tm[0] = tm
-        Xm[:,0] = x
-        Fm[:,0] = f(Tm[0],Xm[:,0],*args)
+        Xm[:, 0] = x
+        Fm[:, 0] = f(Tm[0], Xm[:, 0], *args)
 
-        #Stage 2, 3, ..., s
-        for j in range(1,s):
-            T[j] = t + h*c[j]
-            X[:,j] = x + np.dot(F[:,:j],h*AT[:j,j])
-            F[:,j] = f(T[j],X[:,j],*args)
-            Tm[j] = tm + hm*c[j]
-            Xm[:,j] = x + np.dot(Fm[:,:j],hm*AT[:j,j])
-            Fm[:,j] = f(Tm[j],Xm[:,j],*args)
-
-        #Update state
-        xnew = x + np.dot(F,h*b)
-
-        #Compute second time step
-        xm = x + np.dot(Fm,hm*b)
-        Xm[:,0] = xm
-        for i in range(1,s):
-            Xm[:,i] = xm + np.dot(Fm[:,:i-1],hm*AT[:i-1,i])  
-            Fm[:,i] = f(Tm[i],Xm[:,i],*args)
+        for j in range(1, s):
+            # Full step stages
+            T[j] = t + h * c[j]
+            X[:, j] = x + np.dot(F[:, :j], h * AT[:j, j])
+            F[:, j] = f(T[j], X[:, j], *args)
             
-        xnewm = xm + np.dot(Fm,hm*b)
+            # Half step stages
+            Tm[j] = tm + hm * c[j]
+            Xm[:, j] = x + np.dot(Fm[:, :j], hm * AT[:j, j])
+            Fm[:, j] = f(Tm[j], Xm[:, j], *args)
 
+        # Compute full step and two half steps
+        xnew = x + np.dot(F, h * b)
+        
+        # First half step
+        xm = x + np.dot(Fm, hm * b)
+        Xm[:, 0] = xm
+        Fm[:, 0] = f(tm, Xm[:, 0], *args)
+        
+        # Second half step stages
+        for j in range(1, s):
+            Xm[:, j] = xm + np.dot(Fm[:, :j], hm * AT[:j, j])
+            Fm[:, j] = f(Tm[j], Xm[:, j], *args)
+        
+        xnewm = xm + np.dot(Fm, hm * b)
 
+        # Error estimation
         x_err = np.linalg.norm(xnew - xnewm)
-        #max1 = np.max([abstol, np.abs(xnewm) * reltol])
-        #r = np.max(x_err / max1)
+        scale = np.maximum(abstol, np.abs(xnew) * reltol)
+        r = np.max(x_err / scale)
 
-        # Check if error is within tolerance
-        if x_err < abstol:
-            # Update time and state
-            t = t + h
+        # Step size adjustment
+        if r <= 1.0:  # Step accepted
+            t += h
             x = xnew
-            # Store values
             Tout.append(t)
-            Xout.append(x)
+            Xout.append(x.copy())
+            H.append(h)
+            # Increase step size for next step
+            h = min(hmax, max(hmin, 0.9 * h * (epstol / r)**0.2))
+        else:  # Step rejected
+            # Decrease step size and try again
+            h = max(hmin, min(hmax, 0.9 * h * (epstol / r)**0.25))
 
-        # Update step size
-        # Update step size
-        h = np.max([hmin, np.min([hmax, np.sqrt(epstol / x_err)])]) * h
-        H.append(h)
-
+    if iterations >= maxiter:
+        print("Warning: Maximum iterations reached!")
+        
     return np.array(Tout), np.array(Xout), np.array(H)
 
 
