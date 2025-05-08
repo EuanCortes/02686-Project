@@ -286,41 +286,49 @@ def SDEsolverExplicitExplicit(f, g, t, x0, W, p=None):
     
     return X
 
-#Newtons method for SDE
-def SDENewtonSolver(ffun, t, dt, psi, xinit, tol, maxit, *varargin):
+# Newton's method for SDE
+def SDENewtonSolver(f, jac, t, dt, psi, xinit, tol, maxit, *args):
     I = np.eye(len(xinit))
     x = xinit
-    f, J = ffun(t, x, *varargin)
-    R = x - f * dt - psi
+    fx = f(t, x, *args)
+    J = jac(t, x, *args)
+    R = x - fx * dt - psi
+    
     it = 1
     while (np.linalg.norm(R, np.inf) > tol) and (it <= maxit):
         dRdx = I - J * dt
         mdx = np.linalg.solve(dRdx, R)
         x = x - mdx
-        f, J = ffun(t, x, *varargin)
-        R = x - f * dt - psi
+        fx = f(t, x, *args)
+        J = jac(t, x, *args)
+        R = x - fx * dt - psi
         it += 1
-    return x, f, J
+    
+    return x, fx, J
 
-#Implicit-explicit method for SDE with fixed step size
-def SDEsolverImplicitExplicit(ffun, gfun, T, x0, W, *varargin):
+# Implicit-explicit method for SDE with fixed step size
+def SDEsolverImplicitExplicit(f, jac, gfun, T, x0, W, *args):
     tol = 1.0e-8
     maxit = 100
-
     N = len(T)
     nx = len(x0)
     X = np.zeros((nx, N))
-
     X[:, 0] = x0
 
     for k in range(N-1):
-        f = ffun(T[k], X[:, k], *varargin)
-        g = gfun(T[k], X[:, k], *varargin)
+        # Explicit part (diffusion)
+        g = gfun(T[k], X[:, k], *args)
         dt = T[k+1] - T[k]
         dW = W[:, k+1] - W[:, k]
-        psi = X[:, k] + g * dW
-        xinit = psi + f * dt
-        X[:, k+1], f, _ = SDENewtonSolver(ffun, T[k+1], dt, psi, xinit, tol, maxit, *varargin)
+        psi = X[:, k] + g @ dW  # Matrix multiplication for multi-dimensional case
+        
+        # Initial guess for implicit step
+        xinit = psi + f(T[k], X[:, k], *args) * dt
+        
+        # Implicit step (drift)
+        X[:, k+1], _, _ = SDENewtonSolver(
+            f, jac, T[k+1], dt, psi, xinit, tol, maxit, *args
+        )
 
     return X
 

@@ -168,7 +168,7 @@ def CSTR_1state_model(params, esdirk = False):
 # Models for PFR 1 state and 3 state, Pipe Advection Diffusion Reaction.
 # For the 3 state model:
 
-def PFR_3state_model(t, x, u, p, esdirk = False):
+def PFR_3state_model(u, p, esdirk = False):
     """
     PFR Advection-Diffusion-Reaction model with 3 states: CA, CB, T.
 
