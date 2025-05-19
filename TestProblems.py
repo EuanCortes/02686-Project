@@ -53,23 +53,10 @@ def van_der_pol_model(mu, esdirk = False):
     
     return f, jacobian
 
-
+ 
 
 
 # Functions for Chemical Reaction in adiabatic reactors
-# Model of the CSTR (3 state Model)
-# Parameters:
-p = 1.0             # Density
-cp = 4.186          # Specific heat capacity
-k0 = np.exp(24.6)   # Arrhenius constant
-Ea_R = 8500.0       # Activation energy   
-deltaHr = -56000.0  # Reaction enthalphy
-L = 10              # Length of the reactor
-A = 0.1             # Cross-sectional area Reactor
-D = [0.1, 0.1, 0.1] # Diffusion coefficients
-# F is some value between 200 and 800
-beta = - deltaHr / (p * cp) 
-
 
 def CSTR_3state_model(params, esdirk = False):
     # Functions for Chemical Reaction in adiabatic reactors
@@ -135,6 +122,17 @@ def CSTR_3state_model(params, esdirk = False):
 # Function for the CSTR (1 state Model)
 
 def CSTR_1state_model(params, esdirk = False):
+    p = 1.0             # Density
+    cp = 4.186          # Specific heat capacity
+    k0 = np.exp(24.6)   # Arrhenius constant
+    Ea_R = 8500.0       # Activation energy   
+    deltaHr = -56000.0  # Reaction enthalphy
+    L = 10              # Length of the reactor
+    A = 0.1             # Cross-sectional area Reactor
+    D = [0.1, 0.1, 0.1] # Diffusion coefficients
+    # F is some value between 200 and 800
+    beta = - deltaHr / (p * cp) 
+
     F, V, CA_in, CB_in, Tin = params
 
     def f(t, T):
@@ -216,7 +214,7 @@ def PFR_3state_model(u, p, esdirk = False):
     DA, DB, DT = D
     beta = p["beta"]
     v = p["v"]          #F/A
-
+    Ea_R = 8500.0  
 
 
     def f(t,x):
@@ -360,7 +358,7 @@ def PFR_3state_model(u, p, esdirk = False):
 
 
 
-def PFR_1state_model(t, x, u, p):
+def PFR_1state_model(u, p):
     """
     PFR Advection-Diffusion-Reaction model with 1 states: T.
 
@@ -405,6 +403,7 @@ def PFR_1state_model(t, x, u, p):
     DT = D
     beta = p["beta"]
     v = p["v"]          #F/A
+    Ea_R = 8500.0  
 
     def f(t,x, esdirk = False):
 
