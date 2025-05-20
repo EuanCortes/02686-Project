@@ -232,7 +232,7 @@ def PFR_3state_model(u, p, esdirk = False):
     k0 = np.exp(24.6)   # Arrhenius constant 
     def k(T):
         return k0 * np.exp(-Ea_R / T)
-
+    n = 50 # Number of spatial points
     def f(t,x):
         CA = x[:len(x)//3]
         CB = x[len(x)//3:2*len(x)//3]
@@ -312,68 +312,68 @@ def PFR_3state_model(u, p, esdirk = False):
             return xdot
 
     def Jacobian(t, x):
-        """
-        Jacobian of the PFR Advection-Diffusion-Reaction model with 3 states: CA, CB, T.
-
-        Parameters:
-        -----------
-        t : float
-            Time
-        x : array-like
-            State vector: [CA_0,...,CA_n-1, CB_0,...,CB_n-1, T_0,...,T_n-1]
-        u : array-like
-            Inlet conditions: [CAin, CBin, Tin]
-        p : dict
-            Parameters:
-                - L : int        (Length of the reactor)
-                - dz : float     (spatial step)
-                - v : float      (velocity)
-                - D : float      (diffusivity in shape [DA, DB, DT])
-                - beta : float   (heat of reaction) = -DeltaHr / (p * cp)
-                - k : function   (reaction rate constant)
-                - k0 : float     (pre-exponential factor)
-
-        Returns:
-        --------
-        J : array-like
-            Jacobian matrix of the system
-
-        """
-        CA, CB, T = x
-        n = len(CA)
-        # Initialize derivatives
-        dCA_dt = np.zeros(n)
-        dCB_dt = np.zeros(n)
-        dT_dt = np.zeros(n)
-        # Reaction term
+        CA = x[:n]
+        CB = x[n:2*n]
+        T = x[2*n:]
         r = k(T) * CA * CB
 
-        # Initialize Jacobian matrix
-        J = np.zeros((n,3,3))
+        J_full = np.zeros((3*n, 3*n))
 
-        # Fill in the Jacobian matrix based on the model equations
+        for i in range(n):
+            # Local indices
+            idx = 3*i
 
-        # We start with the equation of CAdot
+            # k and derivatives
+            k_i = k(T[i])
+            dk_dT = k_i * Ea_R / T[i]**2
 
-        J[:,0,0] = (v - DA / dz) / (-dz) + k(T) * CB
-        J[:,0,1] = - k(T) * CA
-        J[:,0,2] = - k(T) * CA * CB * (Ea_R / T**2)
-        
-        # Next, we fill in the equation of CBdot
-        J[:,1,0] = -2 * k(T) * CB
-        J[:,1,1] = (v - DB / dz) / (-dz) - 2 * k(T) * CA
-        J[:,1,2] = -2 * k(T) * CA * CB * (Ea_R / T**2)
+            # Local reaction Jacobian (same as before)
+            J_local = np.array([
+                [k_i * CB[i],       -k_i * CA[i],         -dk_dT * CA[i] * CB[i]],
+                [-2 * k_i * CB[i],  -2 * k_i * CA[i],     -2 * dk_dT * CA[i] * CB[i]],
+                [beta * k_i * CB[i], beta * k_i * CA[i],   beta * dk_dT * CA[i] * CB[i]],
+            ])
 
-        # Finally, we fill in the equation of Tdot
-        J[:,2,0] = beta * k(T) * CB
-        J[:,2,1] = beta * k(T) * CA
-        J[:,2,2] = (v - DT / dz) / (-dz) + (Ea_R / T**2) * beta * k(T) * CA * CB
+            # --- Add central (self) block ---
+            for row in range(3):
+                for col in range(3):
+                    J_full[idx + row, idx + col] += J_local[row, col]
 
-        if esdirk:
-            return J, np.eye(3)
-        return J
-    
-    return f, Jacobian
+            # --- Spatial coupling terms ---
+
+            # Left neighbor (i-1)
+            if i > 0:
+                # Central difference approx → + diffusion
+                J_full[idx + 0, idx - 3 + 0] += D[0] / dz**2  # CA-CA
+                J_full[idx + 1, idx - 3 + 1] += D[1] / dz**2  # CB-CB
+                J_full[idx + 2, idx - 3 + 2] += D[2] / dz**2  # T-T
+
+                # Advection upwind
+                J_full[idx + 0, idx - 3 + 0] += v / dz
+                J_full[idx + 1, idx - 3 + 1] += v / dz
+                J_full[idx + 2, idx - 3 + 2] += v / dz
+
+            # Right neighbor (i+1)
+            if i < n - 1:
+                # Central difference approx → + diffusion
+                J_full[idx + 0, idx + 3 + 0] += D[0] / dz**2  # CA-CA
+                J_full[idx + 1, idx + 3 + 1] += D[1] / dz**2  # CB-CB
+                J_full[idx + 2, idx + 3 + 2] += D[2] / dz**2  # T-T
+
+                # Advection downwind
+                J_full[idx + 0, idx + 3 + 0] -= v / dz
+                J_full[idx + 1, idx + 3 + 1] -= v / dz
+                J_full[idx + 2, idx + 3 + 2] -= v / dz
+
+            # Central node: subtract 2*diffusion and -v/dz (total from neighbors)
+            for j in range(3):
+                J_full[idx + j, idx + j] += -2 * D[j] / dz**2 - v / dz
+
+        return J_full
+    if esdirk:
+        return f, Jacobian, np.eye(3*n)
+    else:
+        return f, Jacobian
 
 
 
@@ -393,7 +393,7 @@ def PFR_1state_model(u, p):
     t : float
         Time
     x : array-like
-        State vector: [T_0,...,T_n-1]
+        State vector: [T_0,...,T_n-1]2
     u : array-like
         Inlet conditions: [CAin, CBin, Tin]
     p : dict
@@ -422,7 +422,6 @@ def PFR_1state_model(u, p):
     DT = D
     beta = p["beta"]
     beta = 560.0 / (1.0 * 4.186) # Heat of reaction
-    v = p["v"]          #F/A
     Ea_R = 8500.0 
     k0 = np.exp(24.6)   # Arrhenius constant 
     def k(T):
@@ -467,45 +466,28 @@ def PFR_1state_model(u, p):
 
 
     def Jacobian(t, x, esdirk = False):
-        """
-        Jacobian of the PFR Advection-Diffusion-Reaction model with 1 state: T.
-
-        Parameters:
-        -----------
-        t : float
-            Time
-        x : array-like
-            State vector: [T_0,...,T_n-1]
-        u : array-like
-            Inlet conditions: [CAin, CBin, Tin]
-        p : dict
-            Parameters:
-                - L : int        (Length of the reactor)
-                - dz : float     (spatial step)
-                - v : float      (velocity)
-                - D : float      (diffusivity in shape [DT])
-                - beta : float   (heat of reaction) = -DeltaHr / (p * cp)
-                - k : function   (reaction rate constant)
-                - k0 : float     (pre-exponential factor)
-
-        Returns:
-        --------
-        J : array-like
-            Jacobian matrix of the system
-        """
-        # Unpack parameters
-
         n = len(x)
+        J = np.zeros((n, n))
 
-        # Initialize Jacobian matrix
-        J = np.zeros((n))
-
-        # Compute CA and CB based on T
         CA = CAin + (1 / beta) * (Tin - x)
         CB = CBin + (2 / beta) * (Tin - x)
+        kT = k(x)
+        dk_dT = kT * Ea_R / x**2
 
+        # Reaction term derivative (diagonal)
+        dR_dT = beta * (
+            dk_dT * CA * CB - kT * CB - 2 * kT * CA
+        )
 
-        J = np.array([(v - DT / dz) / (-dz) + (Ea_R / x**2) * beta * k(x) * CA * CB])
+        # Fill diagonal with reaction + central spatial terms
+        for i in range(n):
+            J[i, i] = dR_dT[i] - 2 * DT / dz**2 - v / dz
+
+        # Fill spatial coupling terms
+        for i in range(1, n):
+            J[i, i - 1] = DT / dz**2 + v / dz
+        for i in range(n - 1):
+            J[i, i + 1] = DT / dz**2
 
         if esdirk:
             return J, np.eye(1)
