@@ -172,9 +172,9 @@ def CSTR_1state_model(params, esdirk = False):
         # Jacobian matrix
         J = np.array([-F/V + beta*(k(T)*e2 * CA * CB + k(T) * CB * (-1/beta) + k(T) * CA * (-2/beta))])
         if esdirk:
-            return J, np.eye(1)
+            return np.array([J]), np.eye(1)
         else:
-            return J
+            return np.array([J])
 
     return f, jacobian
 
