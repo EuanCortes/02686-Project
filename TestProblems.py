@@ -66,7 +66,7 @@ def CSTR_3state_model(params, esdirk = False):
     cp = 4.186          # Specific heat capacity
     k0 = np.exp(24.6)   # Arrhenius constant
     Ea_R = 8500.0       # Activation energy   
-    deltaHr = -56000.0  # Reaction enthalphy
+    deltaHr = -560.0  # Reaction enthalphy
     L = 10              # Length of the reactor
     A = 0.1             # Cross-sectional area Reactor
     D = [0.1, 0.1, 0.1] # Diffusion coefficients
@@ -109,9 +109,15 @@ def CSTR_3state_model(params, esdirk = False):
         CA, CB, T = x
         beta = - deltaHr / (p * cp) 
         # Jacobian matrix
-        J = np.array([[ -F/V - k0 * np.exp(-Ea_R / T)*CB, - k0 * np.exp(-Ea_R / T) * CA, - (Ea_R / T**2) * (k0 * np.exp(-Ea_R / T) * CA * CB)],
-                        [ - 2*k0 * np.exp(-Ea_R / T)*CB, - F/V - 2*k0 * np.exp(-Ea_R / T) * CA, - (Ea_R / T**2) *(2*k0 * np.exp(-Ea_R / T) * CA * CB)],
-                        [ beta * k0 * np.exp(-Ea_R / T) * CB, beta * k0 * np.exp(-Ea_R / T) * CA, -F/V - (Ea_R / T**2) *(beta * k0 * np.exp(-Ea_R / T) * CA * CB)]])
+        if T != 0: # Prevent division by zero
+            e = np.exp(-Ea_R / T)
+            e2 = (Ea_R / T**2)
+        else:
+            e = np.exp(-Ea_R / 1e-10)
+            e2 = np.exp(-Ea_R / 1e-10**2)
+        J = np.array([[ -F/V - k0 * e *CB, - k0 * e * CA, - (e2) * (k0 * e * CA * CB)],
+                        [ - 2*k0 * e*CB, - F/V - 2*k0 * e * CA, - (e2) *(2*k0 * e * CA * CB)],
+                        [ beta * k0 * e * CB, beta * k0 * e * CA, -F/V - (e2) *(beta * k0 * e * CA * CB)]])
         if esdirk:
             return J, np.eye(3)
         else:
@@ -126,7 +132,7 @@ def CSTR_1state_model(params, esdirk = False):
     cp = 4.186          # Specific heat capacity
     k0 = np.exp(24.6)   # Arrhenius constant
     Ea_R = 8500.0       # Activation energy   
-    deltaHr = -56000.0  # Reaction enthalphy
+    deltaHr = -560.0  # Reaction enthalphy
     L = 10              # Length of the reactor
     A = 0.1             # Cross-sectional area Reactor
     D = [0.1, 0.1, 0.1] # Diffusion coefficients
@@ -134,10 +140,13 @@ def CSTR_1state_model(params, esdirk = False):
     beta = - deltaHr / (p * cp) 
 
     F, V, CA_in, CB_in, Tin = params
-
+    V = 0.105
     def f(t, T):
         def k(T):
-            return k0 * np.exp(-Ea_R / T)
+            if T == 0:# Prevent division by zero
+                return k0 * np.exp(-Ea_R / 1e-10)
+            else:
+                return k0 * np.exp(-Ea_R / T)
         # Unpack parameters
         CA = CA_in + (1 / beta) * (Tin - T)
         CB = CB_in + (2 / beta) * (Tin - T)
@@ -150,12 +159,18 @@ def CSTR_1state_model(params, esdirk = False):
     # Jacobian for the CSTR (1 state Model)
     def jacobian(t, T):
         def k(T):
-            return k0 * np.exp(-Ea_R / T)
+            if T == 0: # Prevent division by zero
+                return k0 * np.exp(-Ea_R / 1e-10)
+            else:
+                return k0 * np.exp(-Ea_R / T)
         # Unpack parameters
         CA = CA_in + (1 / beta) * (Tin - T)
         CB = CB_in + (2 / beta) * (Tin - T)
+
+        # Prevent division by zero
+        e2 = (Ea_R / T**2) if T != 0 else (Ea_R / 1e-10**2)
         # Jacobian matrix
-        J = np.array([-F/V + beta(k(T)*(Ea_R / T**2) * CA * CB + k(T) * CB * (-1/beta) + k(t) * CA * (-2/beta))])
+        J = np.array([-F/V + beta*(k(T)*e2 * CA * CB + k(T) * CB * (-1/beta) + k(T) * CA * (-2/beta))])
         if esdirk:
             return J, np.eye(1)
         else:
@@ -208,12 +223,12 @@ def PFR_3state_model(u, p, esdirk = False):
     CAin, CBin, Tin = u
     
     dz = p["dz"]
-    v = p["v"]
+    v = p["v"]#F/A
     D = p["D"]
     k = p["k"]
     DA, DB, DT = D
     beta = p["beta"]
-    v = p["v"]          #F/A
+    v = p["v"]          
     Ea_R = 8500.0  
 
 
