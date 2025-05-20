@@ -127,7 +127,7 @@ def CSTR_3state_model(params, esdirk = False):
 
 # Function for the CSTR (1 state Model)
 
-def CSTR_1state_model(params, esdirk = False):
+def CSTR_1state_model(params, esdirk = False, compare = False):
     p = 1.0             # Density
     cp = 4.186          # Specific heat capacity
     k0 = np.exp(24.6)   # Arrhenius constant
@@ -173,6 +173,8 @@ def CSTR_1state_model(params, esdirk = False):
         J = np.array([-F/V + beta*(k(T)*e2 * CA * CB + k(T) * CB * (-1/beta) + k(T) * CA * (-2/beta))])
         if esdirk:
             return np.array([J]), np.eye(1)
+        if compare:
+            return J
         else:
             return np.array([J])
 
