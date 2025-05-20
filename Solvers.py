@@ -211,9 +211,6 @@ def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, 
     X = [x0]
     H = [h0]
 
-    # Newton solver parameters
-    tol_newton = 1e-8
-
     while t < tf:
         # Adjust step size to not exceed tf
         if t + h > tf:
@@ -224,35 +221,33 @@ def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, 
             # Compute candidate steps
             # Full step
             xinit = x + h * f(t, x, *args)  # Explicit Euler as initial guess
-            xnew = NewtonsMethodODE(f, jac, t, x, h, xinit, tol_newton, maxit, *args)
+            xnew = NewtonsMethodODE(f, jac, t, x, h, xinit, abstol, maxit, *args)
 
             # Half steps
             hm = 0.5 * h
             tm = t + hm
             xinit_m = x + hm * f(t, x, *args)
-            xm = NewtonsMethodODE(f, jac, t, x, hm, xinit_m, tol_newton, maxit, *args)
-            xnewm = NewtonsMethodODE(f, jac, tm, xm, hm, xm, tol_newton, maxit, *args)
+            xm = NewtonsMethodODE(f, jac, t, x, hm, xinit_m, abstol, maxit, *args)
+            xnewm = NewtonsMethodODE(f, jac, tm, xm, hm, xm, abstol, maxit, *args)
 
-            # Error estimation
-            err = np.abs(xnew - xnewm)
-            scale = np.maximum(abstol, np.abs(xnewm) * reltol)
-            r = np.max(err / scale)
+            # Compute the error
+            err = np.abs(xnewm - xnew)
+            max1 = np.maximum(abstol, np.abs(xnewm) * reltol)
+            r = np.max(err / max1)
+            AcceptStep = (r <= 1)
 
-            AcceptStep = (r <= 1.0)
-
+            # Check if error is within tolerance
             if AcceptStep:
-                # Update solution
-                t += h
+                # Update time and state
+                t = t + h
                 x = xnewm
+                # Store values
                 T.append(t)
                 X.append(x)
-                H.append(h)
-            else:
-                # Reject step and reduce h
-                h = max(hmin, min(hmax, h * 0.9 * (epstol/r)**0.25))
 
-            # Prevent h from becoming too small
-            h = max(hmin, min(hmax, h))
+            # Update step size
+            h = np.max([hmin, np.min([hmax, np.sqrt(epstol / r)])]) * h
+            H.append(h)
 
     return np.array(T), np.array(X), np.array(H)
 
@@ -363,11 +358,11 @@ def ExplicitRungeKuttaSolver(f, tspan, x0, h, solver, *args):
     X = np.zeros((nx,s))
     F = np.zeros((nx,s))
 
-    Tout = np.zeros((N+1,1))
-    Xout = np.zeros((N+1,nx))
+    Tout = np.zeros((N+1))
+    Xout = np.zeros((nx, N+1))
 
     Tout[0] = t
-    Xout[0,:] = x.T
+    Xout[:,0] = x
 
     for i in range(N):
         #Compute stages
@@ -390,7 +385,7 @@ def ExplicitRungeKuttaSolver(f, tspan, x0, h, solver, *args):
 
         #Store solution
         Tout[i+1] = t
-        Xout[i+1,:] = x.T
+        Xout[:,i+1] = x.T
 
     return Tout, Xout
 
