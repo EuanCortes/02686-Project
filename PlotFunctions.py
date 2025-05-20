@@ -672,13 +672,13 @@ def compare_solvers_pfr(model_func, t_span,  x0,
             if explicit:
                 ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, t_eval=np.linspace(t_span[0], t_span[1], N))
                 if euler:   
-                    t_sol, y, h, r = ExplicitEulerAdaptiveStep(f, t_span, x0, h0, tolerance, tolerance)
+                    t_sol, y, h, r, n_accept, n_reject, n_functions = ExplicitEulerAdaptiveStep(f, t_span, x0, h0, tolerance, tolerance)
                 if rk4:
                     solver = rk4()
-                    t_sol, y, h, r = ExplicitRungeKuttaSolverAdaptive(f, t_span, x0, h0, solver, tolerance, tolerance)
+                    t_sol, y, h, r, n_accept, n_reject, n_functions = ExplicitRungeKuttaSolverAdaptive(f, t_span, x0, h0, solver, tolerance, tolerance)
                 if dopri:
                     solver = dormand_prince_45()
-                    t_sol, y, h, r = ExplicitRungeKuttaSolverAdaptive(f, t_span, x0, h0, solver, tolerance, tolerance)
+                    t_sol, y, h, r, n_accept, n_reject, n_functions = ExplicitRungeKuttaSolverAdaptive(f, t_span, x0, h0, solver, tolerance, tolerance)
             if implicit:
                 if esdirk:
                     ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, 
@@ -692,7 +692,7 @@ def compare_solvers_pfr(model_func, t_span,  x0,
                 else:
                     ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, 
                     t_eval=np.linspace(t_span[0], t_span[1], N))
-                    t_sol, y, h, r = ImplicitEulerAdaptiveStep(f, J, t_span, x0, h0, tolerance, tolerance)
+                    t_sol, y, h, r, n_accept, n_reject, n_functions = ImplicitEulerAdaptiveStep(f, J, t_span, x0, h0, tolerance, tolerance)
 
             CA_ref  = ref_sol.y[:n]
             CB_ref  = ref_sol.y[n:2*n]
@@ -717,7 +717,11 @@ def compare_solvers_pfr(model_func, t_span,  x0,
                 't_sol': t_sol,
                 't_ref': ref_sol.t,
                 'r': r,
-                'h': h
+                'h': h,
+                'n_accept': n_accept,
+                'n_reject': n_reject,
+                'n_functions': n_functions,
+                'ref_nfun': ref_sol.nfev
         }    
         
         for idx, tolerance in enumerate(tolerances):
