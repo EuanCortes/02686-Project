@@ -91,6 +91,7 @@ def ExplicitEulerAdaptiveStep(f, tspan, x0, h0, abstol, reltol, *args):
     T = [t0]
     X = [x0]
     H = [h0]
+    R = [None]
 
     # Main loop
     while t < tf:
@@ -115,6 +116,7 @@ def ExplicitEulerAdaptiveStep(f, tspan, x0, h0, abstol, reltol, *args):
             max1 = np.maximum(abstol, np.abs(xnewm) * reltol)
             r = np.max(err / max1)
             AcceptStep = (r <= 1)
+            R.append(r)
 
             # Check if error is within tolerance
             if AcceptStep:
@@ -129,7 +131,7 @@ def ExplicitEulerAdaptiveStep(f, tspan, x0, h0, abstol, reltol, *args):
             h = np.max([hmin, np.min([hmax, np.sqrt(epstol / r)])]) * h
             H.append(h)
 
-    return np.array(T), np.array(X), np.array(H)
+    return np.array(T), np.array(X), np.array(H), np.array(R)
 
 
 
@@ -210,6 +212,7 @@ def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, 
     T = [t0]
     X = [x0]
     H = [h0]
+    R = [None]  # Error estimates
 
     while t < tf:
         # Adjust step size to not exceed tf
@@ -235,6 +238,7 @@ def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, 
             max1 = np.maximum(abstol, np.abs(xnewm) * reltol)
             r = np.max(err / max1)
             AcceptStep = (r <= 1)
+            R.append(r)
 
             # Check if error is within tolerance
             if AcceptStep:
@@ -249,7 +253,7 @@ def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, 
             h = np.max([hmin, np.min([hmax, np.sqrt(epstol / r)])]) * h
             H.append(h)
 
-    return np.array(T), np.array(X), np.array(H)
+    return np.array(T), np.array(X), np.array(H), np.array(R)
 
 
 ###############################
@@ -420,6 +424,7 @@ def ExplicitRungeKuttaSolverAdaptive(f, tspan, x0, h0, solver, abstol, reltol, *
     Tout = [t]
     Xout = [x.copy()]
     H = [h0]
+    R = [None]  # Error estimates
 
     h = h0
     iterations = 0
@@ -474,7 +479,7 @@ def ExplicitRungeKuttaSolverAdaptive(f, tspan, x0, h0, solver, abstol, reltol, *
         x_err = np.linalg.norm(xnew - xnewm)
         scale = np.maximum(abstol, np.abs(xnew) * reltol)
         r = np.max(x_err / scale)
-
+        R.append(r)
         # Step size adjustment
         if r <= 1.0:  # Step accepted
             t += h
@@ -491,8 +496,7 @@ def ExplicitRungeKuttaSolverAdaptive(f, tspan, x0, h0, solver, abstol, reltol, *
     if iterations >= maxiter:
         print("Warning: Maximum iterations reached!")
         
-    return np.array(Tout), np.array(Xout), np.array(H)
-
+    return np.array(Tout), np.array(Xout), np.array(H), np.array(R)
 
 def rk4():
     return {
