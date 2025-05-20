@@ -218,22 +218,26 @@ def PFR_3state_model(u, p, esdirk = False):
         Time derivatives of state variables
     """
     # Unpack parameters
-
+    
     
     CAin, CBin, Tin = u
     
     dz = p["dz"]
     v = p["v"]#F/A
     D = p["D"]
-    k = p["k"]
     DA, DB, DT = D
-    beta = p["beta"]
+    beta = 560.0 / (1.0 * 4.186) # Heat of reaction
     v = p["v"]          
-    Ea_R = 8500.0  
-
+    Ea_R = 8500.0
+    k0 = np.exp(24.6)   # Arrhenius constant 
+    def k(T):
+        return k0 * np.exp(-Ea_R / T)
 
     def f(t,x):
-        CA, CB, T = x
+        CA = x[:len(x)//3]
+        CB = x[len(x)//3:2*len(x)//3]
+        T = x[2*len(x)//3:]
+
         n = len(CA)
         # Initialize derivatives
         dCA_dt = np.zeros(n)
@@ -414,12 +418,16 @@ def PFR_1state_model(u, p):
     dz = p["dz"]
     v = p["v"]
     D = p["D"]
-    k = p["k"]
+    
     DT = D
     beta = p["beta"]
+    beta = 560.0 / (1.0 * 4.186) # Heat of reaction
     v = p["v"]          #F/A
-    Ea_R = 8500.0  
-
+    Ea_R = 8500.0 
+    k0 = np.exp(24.6)   # Arrhenius constant 
+    def k(T):
+        return k0 * np.exp(-Ea_R / T)
+    
     def f(t,x, esdirk = False):
 
         n = len(x)
