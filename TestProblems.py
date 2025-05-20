@@ -174,7 +174,7 @@ def CSTR_1state_model(params, esdirk = False, compare = False):
         if esdirk:
             return np.array([J]), np.eye(1)
         if compare:
-            return J
+            return np.array(J)
         else:
             return np.array([J])
 
@@ -314,9 +314,40 @@ def PFR_3state_model(u, p, esdirk = False):
             return xdot
 
     def Jacobian(t, x):
-        CA = x[:n]
-        CB = x[n:2*n]
-        T = x[2*n:]
+        """
+        Jacobian of the PFR Advection-Diffusion-Reaction model with 3 states: CA, CB, T.
+
+        Parameters:
+        -----------
+        t : float
+            Time
+        x : array-like
+            State vector: [CA_0,...,CA_n-1, CB_0,...,CB_n-1, T_0,...,T_n-1]
+        u : array-like
+            Inlet conditions: [CAin, CBin, Tin]
+        p : dict
+            Parameters:
+                - L : int        (Length of the reactor)
+                - dz : float     (spatial step)
+                - v : float      (velocity)
+                - D : float      (diffusivity in shape [DA, DB, DT])
+                - beta : float   (heat of reaction) = -DeltaHr / (p * cp)
+                - k : function   (reaction rate constant)
+                - k0 : float     (pre-exponential factor)
+
+        Returns:
+        --------
+        J : array-like
+            Jacobian matrix of the system
+
+        """
+        CA, CB, T = x
+        n = len(CA)
+        # Initialize derivatives
+        dCA_dt = np.zeros(n)
+        dCB_dt = np.zeros(n)
+        dT_dt = np.zeros(n)
+        # Reaction term
         r = k(T) * CA * CB
 
         J_full = np.zeros((3*n, 3*n))
