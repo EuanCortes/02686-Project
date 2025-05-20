@@ -93,6 +93,10 @@ def ExplicitEulerAdaptiveStep(f, tspan, x0, h0, abstol, reltol, *args):
     H = [h0]
     R = [None]
 
+    count_accepted = 0
+    count_rejected = 0
+    count_nfunctions = 0
+
     # Main loop
     while t < tf:
         # Adjust step size
@@ -126,12 +130,17 @@ def ExplicitEulerAdaptiveStep(f, tspan, x0, h0, abstol, reltol, *args):
                 # Store values
                 T.append(t)
                 X.append(x)
+                count_accepted += 1
+            else:
+                count_rejected += 1
 
             # Update step size
             h = np.max([hmin, np.min([hmax, np.sqrt(epstol / r)])]) * h
+
             H.append(h)
 
-    return np.array(T), np.array(X), np.array(H), np.array(R)
+    count_nfunctions = count_accepted + count_rejected
+    return np.array(T), np.array(X), np.array(H), np.array(R), count_accepted, count_rejected, count_nfunctions
 
 
 
@@ -214,6 +223,11 @@ def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, 
     H = [h0]
     R = [None]  # Error estimates
 
+
+    count_accepted = 0
+    count_rejected = 0
+    count_nfunctions = 0
+
     while t < tf:
         # Adjust step size to not exceed tf
         if t + h > tf:
@@ -248,12 +262,17 @@ def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, 
                 # Store values
                 T.append(t)
                 X.append(x)
+                count_accepted += 1
+            else:
+                count_rejected += 1
 
             # Update step size
             h = np.max([hmin, np.min([hmax, np.sqrt(epstol / r)])]) * h
             H.append(h)
+    
+    count_nfunctions = count_accepted + count_rejected
 
-    return np.array(T), np.array(X), np.array(H), np.array(R)
+    return np.array(T), np.array(X), np.array(H), np.array(R), count_accepted, count_rejected, count_nfunctions
 
 
 ###############################
@@ -429,6 +448,12 @@ def ExplicitRungeKuttaSolverAdaptive(f, tspan, x0, h0, solver, abstol, reltol, *
     h = h0
     iterations = 0
 
+    count_accepted = 0
+    count_rejected = 0
+    count_nfunctions = 0
+    # Main loop
+
+
     while t < tf and iterations < maxiter:
         iterations += 1
         
@@ -489,15 +514,17 @@ def ExplicitRungeKuttaSolverAdaptive(f, tspan, x0, h0, solver, abstol, reltol, *
             H.append(h)
             # Increase step size for next step
             h = min(hmax, max(hmin, 0.9 * h * (epstol / r)**0.2))
+            count_accepted += 1
         else:  # Step rejected
             # Decrease step size and try again
             h = max(hmin, min(hmax, 0.9 * h * (epstol / r)**0.25))
+            count_rejected += 1
 
     if iterations >= maxiter:
         print("Warning: Maximum iterations reached!")
+    count_nfunctions = count_accepted + count_rejected
         
-    return np.array(Tout), np.array(Xout), np.array(H), np.array(R)
-
+    return np.array(Tout), np.array(Xout), np.array(H), np.array(R), count_accepted, count_rejected, count_nfunctions
 def rk4():
     return {
         "stages": 4,
@@ -667,7 +694,6 @@ def ESDIRK(fun, jac, t_span, x0, h0, absTol, relTol, Method, *args):
     Tout[0, 0] = t
     Xout[0, :] = x
     Gout[0, :] = g
-
     while t < tf:
         info['nStep'] += 1
         i = 1

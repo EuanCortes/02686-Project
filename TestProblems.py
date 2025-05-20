@@ -174,7 +174,7 @@ def CSTR_1state_model(params, esdirk = False, compare = False):
         if esdirk:
             return np.array([J]), np.eye(1)
         if compare:
-            return J
+            return np.array(J)
         else:
             return np.array([J])
 
@@ -341,8 +341,12 @@ def PFR_3state_model(u, p, esdirk = False):
             Jacobian matrix of the system
 
         """
-        CA, CB, T = x
+        CA = x[:len(x)//3]
+        CB = x[len(x)//3:2*len(x)//3]
+        T = x[2*len(x)//3:]
+
         n = len(CA)
+        #CA, CB, T = x
         # Initialize derivatives
         dCA_dt = np.zeros(n)
         dCB_dt = np.zeros(n)
