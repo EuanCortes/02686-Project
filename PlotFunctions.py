@@ -273,10 +273,10 @@ def compare_solvers_cstr(model_func, t_span,
     # Dictionary to store results
     results = {}
 
-    n_accept = 0
-    n_reject = 0
-    n_functions = 0
-    ref_nfun = 0
+    count_accept = 0
+    count_reject = 0
+    count_functions = 0
+    count_ref_nfun = 0
 
         
     # Compare for each step size
@@ -449,10 +449,10 @@ def compare_solvers_cstr(model_func, t_span,
                 t_ref = np.concatenate([t_ref, (ref_sol.t+(i)*t_span[1])/min])
                 R = np.concatenate([R, r])
                 H = np.concatenate([H, h])
-                n_accept += n_accept
-                n_reject += n_reject
-                n_functions += n_functions
-                ref_nfun += ref_sol.nfev
+                count_accept = count_accept +  n_accept
+                count_reject = count_reject+ n_reject
+                count_functions = count_functions+n_functions
+                count_ref_nfun = count_ref_nfun + ref_sol.nfev
 
 
             # Store results
@@ -463,10 +463,10 @@ def compare_solvers_cstr(model_func, t_span,
                 't_ref': t_ref[1:],
                 't_sol': t[1:],
                 'h': H,
-                'n_accept': n_accept,
-                'n_reject': n_reject,
-                'n_functions': n_functions,
-                'ref_nfun': ref_nfun
+                'n_accept': count_accept,
+                'n_reject': count_reject,
+                'n_functions': count_functions,
+                'ref_nfun': count_ref_nfun
             }
             
         for idx, tolerance in enumerate(tolerances):
@@ -787,8 +787,8 @@ def compare_solvers_pfr(model_func, t_span, x0,
             }
             
             # Plot step sizes and error ratios
-            ax3.semilogy(h, label=f'tol={tolerance:.0e}')
-            ax4.semilogy(r, label=f'tol={tolerance:.0e}')
+            ax3.semilogy(h[:-2], label=f'tol={tolerance:.0e}')
+            ax4.semilogy(r[:-2], label=f'tol={tolerance:.0e}')
             
             # Plot phase portraits
             target_ax = ax1 if idx == 0 else ax2

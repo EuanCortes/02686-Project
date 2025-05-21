@@ -354,8 +354,6 @@ def SDEsolverImplicitExplicit(f, jac, gfun, T, x0, W, *args):
 
 # Runge-Kutta with fixed step size
 def ExplicitRungeKuttaSolver(f, tspan, x0, h, solver, *args):
-    #Solver is a dict
-
     #Solver parameters
     s = solver["stages"]
     AT = solver["AT"]
