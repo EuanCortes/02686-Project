@@ -143,9 +143,12 @@ def compare_solvers(model_func, t_span, x0, params=None,
                     ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, 
                                       t_eval=np.linspace(t_span[0], t_span[1], N), jac=J,rtol=tolerance, atol=tolerance)
                     Method = "ESDIRK23"
-                    t, y, g, _, stats = ESDIRK(f_esdirk, J_esdirk, t_span, x0, h0, tolerance, tolerance, Method=Method)
+                    t, y, g, info, stats = ESDIRK(f_esdirk, J_esdirk, t_span, x0, h0, tolerance, tolerance, Method=Method)
                     h = np.array(stats['h'])
                     r = np.array(stats['r'])
+                    n_accept = info['nAccept']
+                    n_reject = info['nFail']
+                    n_functions = n_accept + n_reject
                 else:
                     ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, 
                                       t_eval=np.linspace(t_span[0], t_span[1], N), jac=J,rtol=tolerance, atol=tolerance)
@@ -513,45 +516,61 @@ def compare_solvers_cstr(model_func, t_span,
         
     return results
 
-
-
-def compare_solvers_pfr(model_func, t_span,  x0,
-                   fixed_step_sizes=[0.1, 0.01], 
-                   tolerances = [1e-3, 1e-6],
-                   h0 = 0.1,
-                   reference_solver='BDF', 
-                   figsize=(16, 12), 
-                   model_name="PFR 3 state",
-                   reference_solver_name="ode15s",
-                   fixed_steps=False,
-                   adaptive_steps=False,
-                   steptype = "fixed",
-                   explicit = False,
-                   implicit = False,
-                   euler = False,
-                   rk45 = False,
-                   dopri = False, 
-                   esdirk = False):
-    # Create figure
-
-    if implicit:
-        methodname = "Implicit"
-    else:
-        methodname = "Explicit"
-
+def compare_solvers_pfr(model_func, t_span, x0,
+                      fixed_step_sizes=[0.1, 0.01], 
+                      tolerances=[1e-3, 1e-6],
+                      h0=0.1,
+                      reference_solver='BDF', 
+                      figsize=(16, 12), 
+                      model_name="PFR 3 state",
+                      reference_solver_name="ode15s",
+                      fixed_steps=False,
+                      adaptive_steps=False,
+                      steptype="fixed",
+                      explicit=False,
+                      implicit=False,
+                      euler=False,
+                      rk45=False,
+                      dopri=False, 
+                      esdirk=False,
+                      s = 2,
+                      n = 5):
+    """
+    Compare different numerical solvers for PFR model with visualization.
+    
+    Fixed issues in original code:
+    - Proper handling of solver selection flags
+    - Correct array indexing for solution components
+    - Improved plotting layout and labels
+    - Better error calculation
+    - Fixed reference solution evaluation points
+    - Proper handling of adaptive step results
+    """
+    
+    # Validate input parameters
+    if not (fixed_steps or adaptive_steps):
+        raise ValueError("Must select either fixed_steps or adaptive_steps")
+    if not (explicit or implicit):
+        raise ValueError("Must select either explicit or implicit")
+    
+    # Determine method names
+    methodname = "Implicit" if implicit else "Explicit"
+    
     if euler:
         overall_methodname = "Euler"
-    if rk45:
-        overall_methodname = "Classic Runge-Kutta "
-    if dopri:
+    elif rk45:
+        overall_methodname = "Classic Runge-Kutta"
+    elif dopri:
         overall_methodname = "Dormand-Prince 4(5)"
-    if esdirk:
-        overall_methodname = "ESDIRK 23" 
+    elif esdirk:
+        overall_methodname = "ESDIRK 23"
+    else:
+        overall_methodname = "Unknown Method"
 
-
+    # Define parameters
     params = {
         "dz": 0.1,
-        "v": 0.00004, # velocity, F/A, F = 400 ml/min A = 0.1 m^2 => v = 400 / 1000 / 1000 / 60 / 0.1 = 
+        "v": 0.01,
         "D": [0.1, 0.1, 0.1],
         "beta": 560.0 / (1.0 * 4.186),
         "k": lambda T: 1.0 * np.exp(-5000/T),
@@ -561,49 +580,76 @@ def compare_solvers_pfr(model_func, t_span,  x0,
     CB_in = 2.4 / 2
     u = [CA_in, CB_in, Tin]
 
-
-    plt.figure(figsize=figsize)
-    plt.suptitle(f"{model_name}: Comparison of {methodname} {overall_methodname} with {steptype} step size vs {reference_solver_name}", fontsize=16)
-    
-    # Dictionary to store results
+      # Number of spatial points
     results = {}
 
-    n = 50
-
-        
-    # Compare for each step size
+    # Fixed step size comparison
     if fixed_steps:
+        plt.figure(figsize=figsize)
+        plt.suptitle(f"{model_name}: {methodname} {overall_methodname} vs {reference_solver_name}", 
+                    fontsize=16)
+        
+        # Create subplots for each step size
+        n_plots = len(fixed_step_sizes)
+        axes = []
+        for i in range(n_plots):
+            if i  == 0:
+                ax = plt.subplot(n_plots+1, 1, i+1)
+            else:
+                ax = plt.subplot(n_plots+1, 1, i+1, sharex=axes[0])
+            axes.append(ax)
+        
+        # Error plot at the bottom
+        error_ax = plt.subplot(n_plots+1, 1, n_plots+1)
+        
         for i, dt in enumerate(fixed_step_sizes):
             N = int((t_span[1] - t_span[0]) / dt) + 1
-            # Determine number of points based on step size
-            f, J = model_func(p = params, u = u)
+            t_eval = np.linspace(t_span[0], t_span[1], N)
             
+            # Get model functions
+            f, J = model_func(p=params, u=u)
+            
+            # Compute reference solution
+            ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, 
+                               t_eval=t_eval, rtol=1e-8, atol=1e-8)
+            
+            # Compute numerical solution
             if explicit:
-                ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, 
-                            t_eval=np.linspace(t_span[0], t_span[1], N))
                 if euler:
                     t_sol, y = ExplicitEulerFixedSteps(f, t_span[0], t_span[1], N, x0)
-                if rk45:
+                elif rk45:
                     solver = rk4()
-                    t_sol,y = ExplicitRungeKuttaSolver(f, t_span, x0, dt, solver)
-            if implicit:
-                ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, 
-                            t_eval=np.linspace(t_span[0], t_span[1], N,))
-                t_sol, y = ImplicitEulerFixedStep(f, J, t_span[0], t_span[1], N, x0)
-
-            CA_ref  = ref_sol.y[:n]
-            CB_ref  = ref_sol.y[n:2*n]
-            T_ref   = ref_sol.y[2*n:3*n]
-            CA = y[:n]
-            CB = y[n:2*n]
-            T = y[2*n:3*n]
-
-            CA_error = np.mean(abs_error(CA[:,1:], CA_ref),axis = 0)
-            CB_error = np.mean(abs_error(CB[:,1:], CB_ref), axis = 0)
-            T_error = np.mean(abs_error(T[:,1:], T_ref), axis = 0)
-            error = np.mean(np.array([CA_error, CB_error, T_error]),axis = 0)
+                    t_sol, y = ExplicitRungeKuttaSolver(f, t_span, x0, dt, solver)
+            elif implicit:
+                if esdirk:
+                    raise NotImplementedError("ESDIRK not implemented for fixed steps")
+                else:
+                    t_sol, y = ImplicitEulerFixedStep(f, J, t_span[0], t_span[1], N, x0)
             
-            results[dt] ={
+            # Extract components
+            CA_ref = ref_sol.y[:n,:]
+            CB_ref = ref_sol.y[n:2*n,:]
+            T_ref = ref_sol.y[2*n:,:]
+            
+            # Handle different solution array shapes
+            if len(y.shape) == 2:  # Time steps in columns
+                CA = y[:n, :]
+                CB = y[n:2*n, :]
+                T = y[2*n:, :]
+            else:  # Single time step
+                CA = y[:n].reshape(-1, 1)
+                CB = y[n:2*n].reshape(-1, 1)
+                T = y[2*n:].reshape(-1, 1)
+            
+            # Calculate errors
+            diff_len = abs(len(CA_ref[0])-len(CA[0]))
+            CA_error = np.mean(abs_error(CA[:,diff_len:], CA_ref), axis=0)
+            CB_error = np.mean(abs_error(CB[:,diff_len:], CB_ref), axis=0)
+            T_error = np.mean(abs_error(T[:,diff_len:], T_ref), axis=0)
+            error = np.mean(np.array([CA_error, CB_error, T_error]), axis=0)
+            
+            # Store results
+            results[dt] = {
                 'CA_ref': CA_ref,
                 'CB_ref': CB_ref,
                 'T_ref': T_ref,
@@ -613,100 +659,116 @@ def compare_solvers_pfr(model_func, t_span,  x0,
                 'error': error,
                 't_sol': t_sol,
                 't_ref': ref_sol.t
-        }    
-                     
-        # Plot error comparison
-        plt.subplot(3, 1, 3)
-        for i, dt in enumerate(fixed_step_sizes):
-            res = results[dt]
-            plt.plot(res['t_sol'][1:],res['error'], label=f'h = {dt}')
-            plt.yscale('log')
-            plt.title(f"{model_name}: Mean Relative Error Comparison")
-            plt.xlabel("Time")
-            plt.ylabel("Relative Error")
-            plt.legend()
-            plt.grid(True)
+            }
+            
+            # Plot concentrations and temperature
+            ax = axes[i]
+            ax_right = ax.twinx()
+            
+            # Plot reference solutions
+            ax.plot(ref_sol.t, CA_ref[s,:], 'r-', label='CA ref')
+            ax.plot(ref_sol.t, CB_ref[s,:], 'g-', label='CB ref')
+            ax_right.plot(ref_sol.t, T_ref[s,:], 'b-', label='T ref')
+            
+            # Plot numerical solutions
+            ax.plot(t_sol, CA[0], 'r--', label='CA num')
+            ax.plot(t_sol, CB[0], 'g--', label='CB num')
+            ax_right.plot(t_sol, T[0], 'b--', label='T num')
+            
+            ax.set_title(f"h = {dt:.4f}")
+            ax.set_ylabel("Concentration")
+            ax_right.set_ylabel("Temperature")
+            
+            # Combine legends
+            lines, labels = ax.get_legend_handles_labels()
+            lines_right, labels_right = ax_right.get_legend_handles_labels()
+            ax.legend(lines + lines_right, labels + labels_right, loc='upper right')
+            ax.grid(True)
+            
+            # Plot error
+            diff_len_error = abs(len(t_sol)-len(error))
+            error_ax.semilogy(t_sol[diff_len_error:], error, label=f'dt = {dt:.4f}')
         
-        for i in range(len(fixed_step_sizes)):
-            ax1 = plt.subplot(3, 1, i+1)
-            ax2 = ax1.twinx()
-            ax1.plot(res['t_sol'], res['CA_sol'][0], label=f'C_A: {methodname} {overall_methodname}',linestyle = '--', color='blue')
-            ax1.plot(res['t_ref'], res['CA_ref'][0], label=f'C_A: {reference_solver_name}', color='red')
-            ax1.plot(res['t_sol'], res['CB_sol'][0], label=f'C_B: {methodname} {overall_methodname}',linestyle = '--', color='green')
-            ax1.plot(res['t_ref'], res['CB_ref'][0], label=f'C_B: {reference_solver_name}', color='orange')
-            ax2.plot(res['t_sol'], res['T_sol'][0], label=f'T: {methodname} {overall_methodname}',linestyle = '--', color='purple')
-            ax2.plot(res['t_ref'], res['T_ref'][0], label=f'T: {reference_solver_name}', color='lightblue')
-            plt.legend()
-            plt.title(f"Comparison of {methodname} {overall_methodname} with {steptype} step size and {reference_solver_name} (dt = {dt})")
-            plt.xlabel("Time")
-            ax1.set_ylabel("Concentration")
-            ax2.set_ylabel("Temperature")
-            plt.grid(True)
-
+        # Configure error plot
+        error_ax.set_title("Mean Absolute Error")
+        error_ax.set_xlabel("Time")
+        error_ax.set_ylabel("Error (log scale)")
+        error_ax.legend()
+        error_ax.grid(True)
+        
         plt.tight_layout()
         plt.show()
-        
+
+    # Adaptive step size comparison
     if adaptive_steps:
-        N = int((t_span[1] - t_span[0]) / h0) + 1
         fig = plt.figure(figsize=figsize)
-        plt.suptitle(f"{model_name}: Adaptive {methodname} {overall_methodname} vs {reference_solver_name}", fontsize=16)
+        plt.suptitle(f"{model_name}: Adaptive {methodname} {overall_methodname} vs {reference_solver_name}", 
+                    fontsize=16)
         
-        # Create grid for subplots (3 rows, 2 columns)
+        # Create grid for subplots
         gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1])
         
         # Phase portraits (top two rows)
-        ax1 = fig.add_subplot(gs[0, :])  # First row spans both columns
-        ax1_right = ax1.twinx()          # Right axis for T (first row)
-        ax2 = fig.add_subplot(gs[1, :])  # Second row spans both columns
-        ax2_right = ax2.twinx()          # Right axis for T (second row)
+        ax1 = fig.add_subplot(gs[0, :])
+        ax1_right = ax1.twinx()
+        ax2 = fig.add_subplot(gs[1, :])
+        ax2_right = ax2.twinx()
         
         # Step size and error ratio plots (third row)
-        ax3 = fig.add_subplot(gs[2, 0])  # Third row, first column (h)
-        ax4 = fig.add_subplot(gs[2, 1])  # Third row, second column (r)
-            
-        # Calculate number of points based on 
-        for idx, tolerance in enumerate(tolerances):
-            f, J = model_func(p = params, u = u)
-            f_esdirk, J_esdirk = model_func(p=params, u = u, esdirk=esdirk)
+        ax3 = fig.add_subplot(gs[2, 0])
+        ax4 = fig.add_subplot(gs[2, 1])
         
+        # Calculate reference solution with dense output
+        f, J = model_func(p=params, u=u)
+        ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, 
+                           rtol=1e-8, atol=1e-8, dense_output=True)
+        
+        for idx, tolerance in enumerate(tolerances):
             if explicit:
-                ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, t_eval=np.linspace(t_span[0], t_span[1], N))
-                if euler:   
-                    t_sol, y, h, r, n_accept, n_reject, n_functions = ExplicitEulerAdaptiveStep(f, t_span, x0, h0, tolerance, tolerance)
-                if rk4:
+                if euler:
+                    t_sol, y, h, r, n_accept, n_reject, n_functions = ExplicitEulerAdaptiveStep(
+                        f, t_span, x0, h0, tolerance, tolerance)
+                elif rk45:
                     solver = rk4()
-                    t_sol, y, h, r, n_accept, n_reject, n_functions = ExplicitRungeKuttaSolverAdaptive(f, t_span, x0, h0, solver, tolerance, tolerance)
-                if dopri:
+                    t_sol, y, h, r, n_accept, n_reject, n_functions = ExplicitRungeKuttaSolverAdaptive(
+                        f, t_span, x0, h0, solver, tolerance, tolerance)
+                elif dopri:
                     solver = dormand_prince_45()
-                    t_sol, y, h, r, n_accept, n_reject, n_functions = ExplicitRungeKuttaSolverAdaptive(f, t_span, x0, h0, solver, tolerance, tolerance)
-            if implicit:
+                    t_sol, y, h, r, n_accept, n_reject, n_functions = ExplicitRungeKuttaSolverAdaptive(
+                        f, t_span, x0, h0, solver, tolerance, tolerance)
+            elif implicit:
                 if esdirk:
-                    ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, 
-                    t_eval=np.linspace(t_span[0], t_span[1], N))
+                    f_esdirk, J_esdirk = model_func(p=params, u=u, esdirk=True)
                     Method = "ESDIRK23"
-
-
-                    t_sol, y, g, _, stats = ESDIRK(f_esdirk, J_esdirk, t_span, x0, h0, tolerance, tolerance, Method=Method)
+                    t_sol, y, g, _, stats = ESDIRK(f_esdirk, J_esdirk, t_span, x0, h0, 
+                                                  tolerance, tolerance, Method=Method)
                     h = np.array(stats['h'])
                     r = np.array(stats['r'])
+                    n_accept = stats['n_accept']
+                    n_reject = stats['n_reject']
+                    n_functions = stats['n_functions']
                 else:
-                    ref_sol = solve_ivp(f, t_span, x0, method=reference_solver, 
-                    t_eval=np.linspace(t_span[0], t_span[1], N))
-                    t_sol, y, h, r, n_accept, n_reject, n_functions = ImplicitEulerAdaptiveStep(f, J, t_span, x0, h0, tolerance, tolerance)
-
-            CA_ref  = ref_sol.y[:n]
-            CB_ref  = ref_sol.y[n:2*n]
-            T_ref   = ref_sol.y[2*n:3*n]
-            CA = y[:,:n].T
-            CB = y[:,n:2*n].T
-            T = y[:,2*n:3*n].T
-
-            CA_error = np.mean(abs_error(CA[:,-1], CA_ref[:,-1]),axis = 0)
-            CB_error = np.mean(abs_error(CB[:,-1], CB_ref[:,-1]), axis = 0)
-            T_error = np.mean(abs_error(T[:,-1], T_ref[:,-1]), axis = 0)
-            error = np.mean(np.array([CA_error, CB_error, T_error]),axis = 0)
+                    t_sol, y, h, r, n_accept, n_reject, n_functions = ImplicitEulerAdaptiveStep(
+                        f, J, t_span, x0, h0, tolerance, tolerance)
             
-            results[tolerance] ={
+            # Evaluate reference solution at numerical solution time points
+            CA_ref = ref_sol.sol(t_sol)[:n]
+            CB_ref = ref_sol.sol(t_sol)[n:2*n]
+            T_ref = ref_sol.sol(t_sol)[2*n:]
+            
+            # Extract numerical solution components
+            CA = y[:, :n].T
+            CB = y[:, n:2*n].T
+            T = y[:, 2*n:].T
+            
+            # Calculate errors
+            CA_error = np.mean(abs_error(CA, CA_ref), axis=0)
+            CB_error = np.mean(abs_error(CB, CB_ref), axis=0)
+            T_error = np.mean(abs_error(T, T_ref), axis=0)
+            error = np.mean(np.array([CA_error, CB_error, T_error]), axis=0)
+            
+            # Store results
+            results[tolerance] = {
                 'CA_ref': CA_ref,
                 'CB_ref': CB_ref,
                 'T_ref': T_ref,
@@ -722,81 +784,49 @@ def compare_solvers_pfr(model_func, t_span,  x0,
                 'n_reject': n_reject,
                 'n_functions': n_functions,
                 'ref_nfun': ref_sol.nfev
-        }    
-        
-        for idx, tolerance in enumerate(tolerances):
-            res = results[tolerance]
+            }
             
-            # Plot step sizes and error ratios (unchanged)
-            ax3.semilogy(res['h'], label=f'tol={tolerance:.0e}')
-            ax4.semilogy(res['r'], label=f'tol={tolerance:.0e}')
+            # Plot step sizes and error ratios
+            ax3.semilogy(h, label=f'tol={tolerance:.0e}')
+            ax4.semilogy(r, label=f'tol={tolerance:.0e}')
             
-            if idx == 0:
-                # Plot CA and CB on left y-axis (ax1)
-                ax1.plot(res['t_sol'], res['CA_sol'][0], '--', color='blue', 
-                        label=f'C_A: {methodname} (tol={tolerance:.0e})')
-                ax1.plot(res['t_ref'], res['CA_ref'][0], color='red', 
-                        label=f'C_A: {reference_solver_name}')
-                ax1.plot(res['t_sol'], res['CB_sol'][0], '--', color='green', 
-                        label=f'C_B: {methodname} (tol={tolerance:.0e})')
-                ax1.plot(res['t_ref'], res['CB_ref'][0], color='orange', 
-                        label=f'C_B: {reference_solver_name}')
-                
-                # Plot T on right y-axis (ax1_right)
-                ax1_right.plot(res['t_sol'], res['T_sol'][0], '--', color='purple', 
-                            label=f'T: {methodname} (tol={tolerance:.0e})')
-                ax1_right.plot(res['t_ref'], res['T_ref'][0], color='lightblue', 
-                            label=f'T: {reference_solver_name}')
-                
-                # Configure axes
-                ax1.set_title(f"Phase Portrait - Numerical Method vs Reference (tol={tolerance:.0e})")
-                ax1.set_xlabel("Time")
-                ax1.set_ylabel("Concentration (CA, CB)")
-                ax1_right.set_ylabel("Temperature (T)")
-                
-                # Combine legends
-                lines1, labels1 = ax1.get_legend_handles_labels()
-                lines2, labels2 = ax1_right.get_legend_handles_labels()
-                ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
-                ax1.grid(True)
-            else:
-                # Plot CA and CB on left y-axis (ax2)
-                ax2.plot(res['t_sol'], res['CA_sol'][0], '--', color='blue', 
-                        label=f'C_A: {methodname} (tol={tolerance:.0e})')
-                ax2.plot(res['t_ref'], res['CA_ref'][0], color='red', 
-                        label=f'C_A: {reference_solver_name}')
-                ax2.plot(res['t_sol'], res['CB_sol'][0], '--', color='green', 
-                        label=f'C_B: {methodname} (tol={tolerance:.0e})')
-                ax2.plot(res['t_ref'], res['CB_ref'][0], color='orange', 
-                        label=f'C_B: {reference_solver_name}')
-                
-                # Plot T on right y-axis (ax2_right)
-                ax2_right.plot(res['t_sol'], res['T_sol'][0], '--', color='purple', 
-                            label=f'T: {methodname} (tol={tolerance:.0e})')
-                ax2_right.plot(res['t_ref'], res['T_ref'][0], color='lightblue', 
-                            label=f'T: {reference_solver_name}')
-                
-                # Configure axes
-                ax2.set_title(f"Phase Portrait - Numerical Method vs Reference (tol={tolerance:.0e})")
-                ax2.set_xlabel("Time")
-                ax2.set_ylabel("Concentration (CA, CB)")
-                ax2_right.set_ylabel("Temperature (T)")
-                
-                # Combine legends
-                lines1, labels1 = ax2.get_legend_handles_labels()
-                lines2, labels2 = ax2_right.get_legend_handles_labels()
-                ax2.legend(lines1 + lines2, labels1 + labels2, loc='best')
-                ax2.grid(True)
+            # Plot phase portraits
+            target_ax = ax1 if idx == 0 else ax2
+            target_ax_right = ax1_right if idx == 0 else ax2_right
+            
+            # Plot concentrations
+            target_ax.plot(t_sol, CA[0], 'b--', label=f'CA (tol={tolerance:.0e})')
+            target_ax.plot(t_sol, CB[0], 'g--', label=f'CB (tol={tolerance:.0e})')
+            
+            # Plot reference concentrations
+            target_ax.plot(ref_sol.t, ref_sol.y[0], 'r-', label='CA ref')
+            target_ax.plot(ref_sol.t, ref_sol.y[n], 'm-', label='CB ref')
+            
+            # Plot temperatures
+            target_ax_right.plot(t_sol, T[0], 'k--', label=f'T (tol={tolerance:.0e})')
+            target_ax_right.plot(ref_sol.t, ref_sol.y[2*n], 'c-', label='T ref')
+            
+            # Configure axes
+            target_ax.set_title(f"Phase Portrait (tol={tolerance:.0e})")
+            target_ax.set_xlabel("Time")
+            target_ax.set_ylabel("Concentration")
+            target_ax_right.set_ylabel("Temperature")
+            
+            # Combine legends
+            lines, labels = target_ax.get_legend_handles_labels()
+            lines_right, labels_right = target_ax_right.get_legend_handles_labels()
+            target_ax.legend(lines + lines_right, labels + labels_right, loc='best')
+            target_ax.grid(True)
         
-        # Configure step size and error ratio plots (unchanged)
+        # Configure step size and error ratio plots
         ax3.set_title("Adaptive Step Sizes")
-        ax3.set_xlabel("Time")
+        ax3.set_xlabel("Step")
         ax3.set_ylabel("Step Size (log scale)")
         ax3.legend()
         ax3.grid(True)
         
         ax4.set_title("Error Ratios")
-        ax4.set_xlabel("Time")
+        ax4.set_xlabel("Step")
         ax4.set_ylabel("Error Ratio (log scale)")
         ax4.legend()
         ax4.grid(True)

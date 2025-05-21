@@ -341,8 +341,11 @@ def PFR_3state_model(u, p, esdirk = False):
             Jacobian matrix of the system
 
         """
-        CA, CB, T = x
+        CA = x[:len(x)//3]
+        CB = x[len(x)//3:2*len(x)//3]
+        T = x[2*len(x)//3:]
         n = len(CA)
+
         # Initialize derivatives
         dCA_dt = np.zeros(n)
         dCB_dt = np.zeros(n)
@@ -358,7 +361,7 @@ def PFR_3state_model(u, p, esdirk = False):
 
             # k and derivatives
             k_i = k(T[i])
-            dk_dT = k_i * Ea_R / T[i]**2
+            dk_dT = k_i * Ea_R / np.power(T[i], 2)
 
             # Local reaction Jacobian (same as before)
             J_local = np.array([
@@ -401,12 +404,12 @@ def PFR_3state_model(u, p, esdirk = False):
             # Central node: subtract 2*diffusion and -v/dz (total from neighbors)
             for j in range(3):
                 J_full[idx + j, idx + j] += -2 * D[j] / dz**2 - v / dz
-
-        return J_full
-    if esdirk:
-        return f, Jacobian, np.eye(3*n)
-    else:
-        return f, Jacobian
+        if esdirk:
+            return J_full, np.eye(3*n)
+        else:
+            return J_full
+    
+    return f, Jacobian
 
 
 

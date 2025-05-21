@@ -164,7 +164,7 @@ def NewtonsMethodODE(f, jac, t, x, dt, xinit, tol, maxit, *args):
             break
     return x_new
 
-def ImplicitEulerFixedStep(f, jac, ta, tb, N, xa, *args):
+def ImplicitEulerFixedStep(f, jac, ta, tb, N, xa, maxit = 100, tol = 1e-8,*args):
     # Compute step size and allocate memory
     dt = (tb - ta) / N
     nx = len(xa)
@@ -172,8 +172,6 @@ def ImplicitEulerFixedStep(f, jac, ta, tb, N, xa, *args):
     T = np.zeros(N + 1)
     
     # Solver parameters
-    tol = 1.0e-8
-    maxit = 100
     
     # Initial conditions
     T[0] = ta
