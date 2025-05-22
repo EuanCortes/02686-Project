@@ -230,7 +230,8 @@ def compare_solvers_cstr(model_func, t_span,
                    euler = False,
                    rk45 = False,
                    dopri = False, 
-                   esdirk = False):
+                   esdirk = False,
+                   ESDIRK = ESDIRK):
     # Create figure
 
     if implicit:
@@ -248,6 +249,7 @@ def compare_solvers_cstr(model_func, t_span,
         overall_methodname = "ESDIRK 23" 
 
     min = 60
+    # This F leads to potential unstable areas
     F = [0.7/min,0.6/min,0.5/min,0.4/min,0.3/min,0.2/min,0.3/min,0.4/min,0.5/min,0.6/min,0.7/min,0.7/min,0.2/min,0.2/min,0.7/min,0.7/min]
 
     t = np.array([None])
@@ -424,14 +426,18 @@ def compare_solvers_cstr(model_func, t_span,
                         t_sol, y, h, r, n_accept, n_reject, n_functions = ExplicitRungeKuttaSolverAdaptive(f, t_span, x0, h0, solver, tolerance, tolerance)
                 if implicit:
                     if esdirk:
+                        print("starting solve_ivp solver")
                         ref_sol = solve_ivp(f, t_span, x0_ref, method=reference_solver, 
                         t_eval=np.linspace(t_span[0], t_span[1], N), jac = J_c, rtol=tolerance, atol=tolerance)
                         Method = "ESDIRK23"
-
-
-                        t_sol, y, g, _, stats = ESDIRK(f_esdirk, J_esdirk, t_span, x0, h0, tolerance, tolerance, Method=Method)
+                        print("Solved via solve_ivp")
+                        print("starting ESDIRK solver")
+                        t_sol, y, g, info, stats = ESDIRK(f_esdirk, J_esdirk, t_span, x0, h0, tolerance, tolerance, Method=Method)
+                        print("Solved via ESDIRK")
                         h = np.array(stats['h'])
                         r = np.array(stats['r'])
+                        n_accept = info['nAccept']
+                        n_reject = info['nFail']
                     else:
                         ref_sol = solve_ivp(f, t_span, x0_ref, method=reference_solver, 
                         t_eval=np.linspace(t_span[0], t_span[1], N), jac = J_c, rtol=tolerance, atol=tolerance)
@@ -534,7 +540,8 @@ def compare_solvers_pfr(model_func, t_span, x0,
                       dopri=False, 
                       esdirk=False,
                       s = 2,
-                      n = 5):
+                      n = 5,
+                      ESDIRK = ESDIRK):
     """
     Compare different numerical solvers for PFR model with visualization.
     
@@ -740,13 +747,13 @@ def compare_solvers_pfr(model_func, t_span, x0,
                 if esdirk:
                     f_esdirk, J_esdirk = model_func(p=params, u=u, esdirk=True)
                     Method = "ESDIRK23"
-                    t_sol, y, g, _, stats = ESDIRK(f_esdirk, J_esdirk, t_span, x0, h0, 
+                    t_sol, y, g, info, stats = ESDIRK(f_esdirk, J_esdirk, t_span, x0, h0, 
                                                   tolerance, tolerance, Method=Method)
                     h = np.array(stats['h'])
                     r = np.array(stats['r'])
-                    n_accept = stats['n_accept']
-                    n_reject = stats['n_reject']
-                    n_functions = stats['n_functions']
+                    n_accept = info['nAccept']
+                    n_reject = info['nFail']
+                    #n_functions = stats['n_functions']
                 else:
                     t_sol, y, h, r, n_accept, n_reject, n_functions = ImplicitEulerAdaptiveStep(
                         f, J, t_span, x0, h0, tolerance, tolerance)
@@ -782,7 +789,7 @@ def compare_solvers_pfr(model_func, t_span, x0,
                 'h': h,
                 'n_accept': n_accept,
                 'n_reject': n_reject,
-                'n_functions': n_functions,
+                #'n_functions': n_functions,
                 'ref_nfun': ref_sol.nfev
             }
             

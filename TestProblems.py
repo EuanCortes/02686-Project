@@ -143,10 +143,7 @@ def CSTR_1state_model(params, esdirk = False, compare = False):
     V = 0.105
     def f(t, T):
         def k(T):
-            if T == 0:# Prevent division by zero
-                return k0 * np.exp(-Ea_R / 1e-10)
-            else:
-                return k0 * np.exp(-Ea_R / T)
+            return k0 * np.exp(-Ea_R / T)
         # Unpack parameters
         CA = CA_in + (1 / beta) * (Tin - T)
         CB = CB_in + (2 / beta) * (Tin - T)
@@ -159,10 +156,7 @@ def CSTR_1state_model(params, esdirk = False, compare = False):
     # Jacobian for the CSTR (1 state Model)
     def jacobian(t, T):
         def k(T):
-            if T == 0: # Prevent division by zero
-                return k0 * np.exp(-Ea_R / 1e-10)
-            else:
-                return k0 * np.exp(-Ea_R / T)
+            return k0 * np.exp(-Ea_R / T)
         # Unpack parameters
         CA = CA_in + (1 / beta) * (Tin - T)
         CB = CB_in + (2 / beta) * (Tin - T)
@@ -176,7 +170,7 @@ def CSTR_1state_model(params, esdirk = False, compare = False):
         if compare:
             return np.array(J)
         else:
-            return np.array([J])
+            return np.array(J)
 
     return f, jacobian
 

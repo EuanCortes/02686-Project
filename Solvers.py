@@ -155,11 +155,11 @@ def NewtonsMethodODE(f, jac, t, x, dt, xinit, tol, maxit, *args):
         # Calculate function and Jacobian at new time step
         F = x_new - x - dt * f(t + dt, x_new, *args)
         J = np.eye(len(x)) - dt * jac(t + dt, x_new, *args)
-        
-        # Newton update
-        dx = np.linalg.solve(J, -F)
+        try:
+            dx = np.linalg.solve(J, -F)
+        except np.linalg.LinAlgError:
+            raise  # Let the adaptive stepper handle the rejection
         x_new += dx
-        
         if np.linalg.norm(dx) < tol:
             break
     return x_new
@@ -209,7 +209,7 @@ def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, 
     t = t0
     x = x0.copy()
     h = h0
-
+    printed = False
     # Step size bounds
     hmin = 0.01
     hmax = 5.0
@@ -225,7 +225,7 @@ def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, 
     count_accepted = 0
     count_rejected = 0
     count_nfunctions = 0
-
+    h_min = 1e-6
     while t < tf:
         # Adjust step size to not exceed tf
         if t + h > tf:
@@ -233,41 +233,55 @@ def ImplicitEulerAdaptiveStep(f, jac, tspan, x0, h0, abstol, reltol, maxit=100, 
 
         AcceptStep = False
         while not AcceptStep:
-            # Compute candidate steps
-            # Full step
-            xinit = x + h * f(t, x, *args)  # Explicit Euler as initial guess
-            xnew = NewtonsMethodODE(f, jac, t, x, h, xinit, abstol, maxit, *args)
+            try:
+                # Compute candidate steps
+                xinit = x + h * f(t, x, *args)
+                xnew = NewtonsMethodODE(f, jac, t, x, h, xinit, abstol, maxit, *args)
 
-            # Half steps
-            hm = 0.5 * h
-            tm = t + hm
-            xinit_m = x + hm * f(t, x, *args)
-            xm = NewtonsMethodODE(f, jac, t, x, hm, xinit_m, abstol, maxit, *args)
-            xnewm = NewtonsMethodODE(f, jac, tm, xm, hm, xm, abstol, maxit, *args)
+                hm = 0.5 * h
+                tm = t + hm
+                xinit_m = x + hm * f(t, x, *args)
+                xm = NewtonsMethodODE(f, jac, t, x, hm, xinit_m, abstol, maxit, *args)
+                xnewm = NewtonsMethodODE(f, jac, tm, xm, hm, xm, abstol, maxit, *args)
+            except np.linalg.LinAlgError:
+                # Reduce h and try again
+                if h <= h_min:
+                    AcceptStep = True  # Or break/raise if you want to stop
+                
 
             # Compute the error
             err = np.abs(xnewm - xnew)
             max1 = np.maximum(abstol, np.abs(xnewm) * reltol)
             r = np.max(err / max1)
             AcceptStep = (r <= 1)
+            if np.isnan(r) or np.isinf(r):
+                r = 1e8
             R.append(r)
-
+            if h <= h_min:
+                AcceptStep = True
             # Check if error is within tolerance
             if AcceptStep:
                 # Update time and state
+                if np.isnan(h) or h < h_min:
+                    h = h_min
                 t = t + h
                 x = xnewm
                 # Store values
                 T.append(t)
                 X.append(x)
                 count_accepted += 1
+                
             else:
                 count_rejected += 1
 
             # Update step size
             h = np.max([hmin, np.min([hmax, np.sqrt(epstol / r)])]) * h
+            # After updating h
+
+            # Add this check:
+            if np.isnan(h) or h < h_min:
+                h = h_min
             H.append(h)
-    
     count_nfunctions = count_accepted + count_rejected
 
     return np.array(T), np.array(X), np.array(H), np.array(R), count_accepted, count_rejected, count_nfunctions
